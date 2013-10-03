@@ -64,6 +64,6 @@ module Buildr #:nodoc:
   end
 end
 
-Java.classpath << "org.eclipse.jdt.core.compiler:ecj:jar:3.5.1"
+Java.classpath << "org.eclipse.jdt.core.compiler:ecj:jar:4.2.2"
 # Adding ecj before javac
 Buildr::Compiler.compilers.unshift Buildr::Compiler::Ecj
