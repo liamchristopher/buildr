@@ -271,7 +271,10 @@ module URI
       options ||= {}
       connect do |http|
         trace "Requesting #{self}"
-        headers = { 'If-Modified-Since' => CGI.rfc1123_date(options[:modified].utc) } if options[:modified]
+        headers = {}
+        headers['If-Modified-Since'] = CGI.rfc1123_date(options[:modified].utc) if options[:modified]
+        headers['Cache-Control'] = 'no-cache'
+        headers['User-Agent'] = "Buildr-#{Buildr::VERSION}"
         request = Net::HTTP::Get.new(request_uri.empty? ? '/' : request_uri, headers)
         request.basic_auth self.user, self.password if self.user
         http.request request do |response|
@@ -419,7 +422,7 @@ module URI
       rescue Net::SSH::AuthenticationFailed=>ex
         # Only if running with console, prompt for password.
         if !ssh_options[:password] && $stdout.isatty
-          password = ask("Password for #{host}:") { |q| q.echo = '*' }
+          password = Buildr::Console.ask_password("Password for #{host}:") { |q| q.echo = '*' }
           ssh_options[:password] = password
           retry
         end
@@ -462,7 +465,7 @@ module URI
       rescue Net::SSH::AuthenticationFailed=>ex
         # Only if running with console, prompt for password.
         if !ssh_options[:password] && $stdout.isatty
-          password = ask("Password for #{host}:") { |q| q.echo = '*' }
+          password = Buildr::Console.ask_password("Password for #{host}:") { |q| q.echo = '*' }
           ssh_options[:password] = password
           retry
         end

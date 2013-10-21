@@ -109,7 +109,9 @@ task 'publish-doc' => %w(buildr.pdf _site setup-local-site-svn) do
 end
 
 task 'publish-site-svn' do
-  sh 'svn', 'add', '--force', 'site'
+  cd 'site'
+  sh 'svn', 'add', '--force', '.'
+  cd '..'
   sh 'svn', 'commit', 'site', '-m', 'Publish latest site'
 end
 
@@ -124,6 +126,8 @@ task 'setup-local-site-svn' do
 end
 
 task 'clobber' do
+  rm_rf 'rake'
+  rm_rf 'site'
   rm_rf '_site'
   rm_f 'buildr.pdf'
   rm_f 'prince_errors.log'

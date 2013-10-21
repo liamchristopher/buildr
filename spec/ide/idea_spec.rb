@@ -17,6 +17,14 @@
 require File.expand_path(File.join(File.dirname(__FILE__), '..', 'spec_helpers'))
 require File.expand_path(File.join(File.dirname(__FILE__), '..', 'xpath_matchers'))
 
+def ensure_facet_xpath(doc, type, name)
+  facet_xpath = "/module/component[@name='FacetManager']/facet"
+  doc.should have_xpath(facet_xpath)
+  web_facet_xpath = "#{facet_xpath}[@type='#{type}', @name='#{name}']"
+  doc.should have_xpath(web_facet_xpath)
+  web_facet_xpath
+end
+
 describe Buildr::IntellijIdea do
 
   def invoke_generate_task
@@ -289,10 +297,534 @@ describe Buildr::IntellijIdea do
 
       it "generates an IML for root project with a web and webservice facet" do
         doc = xml_document(@foo._("foo.iml"))
-        facet_xpath = "/module/component[@name='FacetManager']/facet"
-        doc.should have_nodes(facet_xpath, 2)
-        doc.should have_xpath("#{facet_xpath}[@type='web', @name='Web']")
-        doc.should have_xpath("#{facet_xpath}[@type='WebServicesClient', @name='WebServices Client']")
+        ensure_facet_xpath(doc, 'web', 'Web')
+        ensure_facet_xpath(doc, 'WebServicesClient', 'WebServices Client')
+      end
+    end
+
+    describe "using add_gwt_facet" do
+      before do
+        @foo = define "foo" do
+          iml.add_gwt_facet("com.biz.MyModule" => true, "com.biz.MyOtherModule" => false)
+        end
+        invoke_generate_task
+      end
+
+      it "generates a gwt facet with default settings" do
+        doc = xml_document(@foo._("foo.iml"))
+        facet_xpath = ensure_facet_xpath(doc, 'gwt', 'GWT')
+        setting_xpath = "#{facet_xpath}/configuration/setting"
+        doc.should have_xpath("#{setting_xpath}[@name='gwtSdkUrl', value='file://$GWT_TOOLS$']")
+        doc.should have_xpath("#{setting_xpath}[@name='gwtScriptOutputStyle', value='PRETTY']")
+        doc.should have_xpath("#{setting_xpath}[@name='compilerParameters', value='-draftCompile -localWorkers 2 -strict']")
+        doc.should have_xpath("#{setting_xpath}[@name='compilerParameters', value='-draftCompile -localWorkers 2 -strict']")
+        doc.should have_xpath("#{setting_xpath}[@name='compilerMaxHeapSize', value='512']")
+        doc.should have_xpath("#{setting_xpath}[@name='webFacet', value='Web']")
+      end
+
+      it "generates a gwt facet with specified modules" do
+        doc = xml_document(@foo._("foo.iml"))
+        facet_xpath = ensure_facet_xpath(doc, 'gwt', 'GWT')
+        prefix = "#{facet_xpath}/configuration/packaging/module"
+        doc.should have_xpath("#{prefix}[@name='com.biz.MyModule', @enabled='true']")
+        doc.should have_xpath("#{prefix}[@name='com.biz.MyOtherModule', @enabled='false']")
+      end
+    end
+
+    describe "using add_gwt_facet that detects gwt sdk" do
+      before do
+        artifact('com.google.gwt:gwt-dev:jar:2.5.1-not-a-release') { |task| write task.name }
+        @foo = define "foo" do
+          compile.with 'com.google.gwt:gwt-dev:jar:2.5.1-not-a-release'
+          iml.add_gwt_facet("com.biz.MyModule" => true)
+        end
+        invoke_generate_task
+      end
+
+      it "generates a gwt facet with detected gwt sdk settings" do
+        doc = xml_document(@foo._("foo.iml"))
+        facet_xpath = ensure_facet_xpath(doc, 'gwt', 'GWT')
+        setting_xpath = "#{facet_xpath}/configuration/setting"
+        doc.should have_xpath("#{setting_xpath}[@name='gwtSdkType', value='maven']")
+        doc.should have_xpath("#{setting_xpath}[@name='gwtSdkUrl', value='$MAVEN_REPOSITORY$/com/google/gwt/gwt-dev/2.5.1-not-a-release']")
+      end
+    end
+
+    describe "using add_gwt_facet that specifies gwt sdk" do
+      before do
+        artifact('com.example:library:jar:2.0') { |task| write task.name }
+        @foo = define "foo" do
+          iml.add_gwt_facet({"com.biz.MyModule" => true},:gwt_dev_artifact => 'com.example:library:jar:2.0')
+        end
+        invoke_generate_task
+      end
+
+      it "generates a gwt facet with detected gwt sdk settings" do
+        doc = xml_document(@foo._("foo.iml"))
+        facet_xpath = ensure_facet_xpath(doc, 'gwt', 'GWT')
+        setting_xpath = "#{facet_xpath}/configuration/setting"
+        doc.should have_xpath("#{setting_xpath}[@name='gwtSdkType', value='maven']")
+        doc.should have_xpath("#{setting_xpath}[@name='gwtSdkUrl', value='$MAVEN_REPOSITORY$/com/google/gwt/gwt-dev/2.5.1']")
+      end
+    end
+
+    describe "using add_gwt_facet that specifies settings" do
+      before do
+        @foo = define "foo" do
+          iml.add_gwt_facet({"com.biz.MyModule" => true, "com.biz.MyOtherModule" => false},
+                            :settings => {:gwtScriptOutputStyle => 'OTHER', :compilerMaxHeapSize => 1024, :zang => 'zang'})
+        end
+        invoke_generate_task
+      end
+
+      it "generates a gwt facet with specified settings" do
+        doc = xml_document(@foo._("foo.iml"))
+        facet_xpath = ensure_facet_xpath(doc, 'gwt', 'GWT')
+        setting_xpath = "#{facet_xpath}/configuration/setting"
+        doc.should have_xpath("#{setting_xpath}[@name='zang', value='zang']")
+        doc.should have_xpath("#{setting_xpath}[@name='gwtScriptOutputStyle', value='OTHER']")
+        doc.should have_xpath("#{setting_xpath}[@name='compilerMaxHeapSize', value='1024']")
+      end
+    end
+
+    describe "using add_web_facet with jsf and idea version 12" do
+      before do
+        write "src/main/webapp/WEB-INF/web.xml"
+        write "src/main/webapp/WEB-INF/faces-config.xml"
+
+        @foo = define "foo" do
+          ipr.version = "12"
+          iml.add_web_facet
+        end
+        invoke_generate_task
+      end
+
+      it "generates a web facet with jsf facet auto-detected" do
+        doc = xml_document(@foo._("foo.iml"))
+        web_facet_xpath = ensure_facet_xpath(doc, 'web', 'Web')
+        doc.should have_xpath("#{web_facet_xpath}/facet[@type='jsf', @name='JSF']")
+      end
+    end
+
+    describe "using add_web_facet should default to no jsf" do
+      before do
+        write "src/main/webapp/WEB-INF/web.xml"
+
+        @foo = define "foo" do
+          iml.add_web_facet
+        end
+        invoke_generate_task
+      end
+
+      it "does not generate a web facet with jsf facet" do
+        doc = xml_document(@foo._("foo.iml"))
+        web_facet_xpath = ensure_facet_xpath(doc, 'web', 'Web')
+        doc.should_not have_xpath("#{web_facet_xpath}/facet[@type='jsf', @name='JSF']")
+      end
+    end
+
+    describe "using add_web_facet with jsf and idea version 13" do
+      before do
+        write "src/main/webapp/WEB-INF/web.xml"
+        write "src/main/webapp/WEB-INF/faces-config.xml"
+
+        @foo = define "foo" do
+          ipr.version = "13"
+          iml.add_web_facet
+        end
+        invoke_generate_task
+      end
+
+      it "does not generate a web facet with jsf facet" do
+        doc = xml_document(@foo._("foo.iml"))
+        web_facet_xpath = ensure_facet_xpath(doc, 'web', 'Web')
+        doc.should_not have_xpath("#{web_facet_xpath}/facet[@type='jsf', @name='JSF']")
+      end
+    end
+
+    describe "using add_web_facet with jsf and idea version 13 and jsf 'enabled'" do
+      before do
+        write "src/main/webapp/WEB-INF/web.xml"
+        write "src/main/webapp/WEB-INF/faces-config.xml"
+
+        @foo = define "foo" do
+          ipr.version = "13"
+          iml.add_web_facet(:enable_jsf => true)
+        end
+        invoke_generate_task
+      end
+
+      it "does not generate a web facet with jsf facet" do
+        doc = xml_document(@foo._("foo.iml"))
+        web_facet_xpath = ensure_facet_xpath(doc, 'web', 'Web')
+        doc.should_not have_xpath("#{web_facet_xpath}/facet[@type='jsf', @name='JSF']")
+      end
+    end
+
+    describe "using add_web_facet" do
+      before do
+        write "src/main/webapp/WEB-INF/web.xml"
+        write "src/main/webapp/WEB-INF/glassfish-web.xml"
+        write "src/main/webapp/WEB-INF/context.xml"
+
+        @foo = define "foo" do
+          iml.add_web_facet
+        end
+        invoke_generate_task
+      end
+
+      it "generates a web facet with appropriate deployment descriptors" do
+        doc = xml_document(@foo._("foo.iml"))
+        web_facet_xpath = ensure_facet_xpath(doc, 'web', 'Web')
+        deployment_descriptor_xpath = "#{web_facet_xpath}/configuration/descriptors/deploymentDescriptor"
+        doc.should have_xpath("#{deployment_descriptor_xpath}[@name='web.xml',  url='file://$MODULE_DIR$/src/main/webapp/WEB-INF/web.xml']")
+        doc.should have_xpath("#{deployment_descriptor_xpath}[@name='glassfish-web.xml',  url='file://$MODULE_DIR$/src/main/webapp/WEB-INF/glassfish-web.xml']")
+      end
+
+      it "generates a web facet with derived webroots" do
+        doc = xml_document(@foo._("foo.iml"))
+        web_facet_xpath = ensure_facet_xpath(doc, 'web', 'Web')
+        doc.should have_xpath("#{web_facet_xpath}/configuration/webroots/root[@url='file://$MODULE_DIR$/src/main/webapp', @realtive='/']")
+      end
+    end
+
+    describe "using add_web_facet with specified parameters" do
+      before do
+        @foo = define "foo" do
+          iml.add_web_facet(:deployment_descriptors => ["src/main/webapp2/WEB-INF/web.xml"],
+                            :webroots => {"src/main/webapp2" => "/", "src/main/css" => "/css"})
+        end
+        invoke_generate_task
+      end
+
+      it "generates a web facet with appropriate deployment descriptors" do
+        doc = xml_document(@foo._("foo.iml"))
+        web_facet_xpath = ensure_facet_xpath(doc, 'web', 'Web')
+        deployment_descriptor_xpath = "#{web_facet_xpath}/configuration/descriptors/deploymentDescriptor"
+        doc.should have_xpath("#{deployment_descriptor_xpath}[@name='web.xml',  url='file://$MODULE_DIR$/src/main/webapp2/WEB-INF/web.xml']")
+      end
+
+      it "generates a web facet with specified webroots" do
+        doc = xml_document(@foo._("foo.iml"))
+        web_facet_xpath = ensure_facet_xpath(doc, 'web', 'Web')
+        doc.should have_xpath("#{web_facet_xpath}/configuration/webroots/root[@url='file://$MODULE_DIR$/src/main/webapp2', @realtive='/']")
+        doc.should have_xpath("#{web_facet_xpath}/configuration/webroots/root[@url='file://$MODULE_DIR$/src/main/css', @realtive='/css']")
+      end
+    end
+
+    describe "using add_jpa_facet" do
+      before do
+        write "src/main/resources/META-INF/persistence.xml", "org.hibernate.ejb.HibernatePersistence"
+        write "src/main/resources/META-INF/orm.xml"
+
+        @foo = define "foo" do
+          iml.add_jpa_facet
+        end
+        invoke_generate_task
+      end
+
+      it "generates a jpa facet with appropriate deployment descriptors" do
+        doc = xml_document(@foo._("foo.iml"))
+        facet_xpath = ensure_facet_xpath(doc, 'jpa', 'JPA')
+        deployment_descriptor_xpath = "#{facet_xpath}/configuration/deploymentDescriptor"
+        doc.should have_xpath("#{deployment_descriptor_xpath}[@name='persistence.xml',  url='file://$MODULE_DIR$/src/main/resources/META-INF/persistence.xml']")
+        doc.should have_xpath("#{deployment_descriptor_xpath}[@name='orm.xml',  url='file://$MODULE_DIR$/src/main/resources/META-INF/orm.xml']")
+      end
+
+      it "generates a jpa facet with default settings" do
+        doc = xml_document(@foo._("foo.iml"))
+        facet_xpath = ensure_facet_xpath(doc, 'jpa', 'JPA')
+        doc.should have_xpath("#{facet_xpath}/configuration/setting[@name='validation-enabled', @value='true']")
+        doc.should have_xpath("#{facet_xpath}/configuration/setting[@name='provider-name', @value='Hibernate']")
+      end
+    end
+
+    describe "using add_jpa_facet specifying parameters" do
+      before do
+        write "src/main/resources2/META-INF/persistence.xml"
+        write "src/main/resources2/META-INF/orm.xml"
+
+        @foo = define "foo" do
+          iml.add_jpa_facet(:provider_enabled => 'Hibernate',
+                            :deployment_descriptors => ["src/main/resources2/META-INF/persistence.xml",
+                                                        "src/main/resources2/META-INF/orm.xml"])
+        end
+        invoke_generate_task
+      end
+
+      it "generates a jpa facet with appropriate deployment descriptors" do
+        doc = xml_document(@foo._("foo.iml"))
+        facet_xpath = ensure_facet_xpath(doc, 'jpa', 'JPA')
+        deployment_descriptor_xpath = "#{facet_xpath}/configuration/deploymentDescriptor"
+        doc.should have_xpath("#{deployment_descriptor_xpath}[@name='persistence.xml',  url='file://$MODULE_DIR$/src/main/resources2/META-INF/persistence.xml']")
+        doc.should have_xpath("#{deployment_descriptor_xpath}[@name='orm.xml',  url='file://$MODULE_DIR$/src/main/resources2/META-INF/orm.xml']")
+      end
+
+      it "generates a jpa facet with default settings" do
+        doc = xml_document(@foo._("foo.iml"))
+        facet_xpath = ensure_facet_xpath(doc, 'jpa', 'JPA')
+        doc.should have_xpath("#{facet_xpath}/configuration/setting[@name='validation-enabled', @value='true']")
+        doc.should have_xpath("#{facet_xpath}/configuration/setting[@name='provider-name', @value='Hibernate']")
+      end
+    end
+
+    describe "using add_jpa_facet derived from main_source_directories" do
+      before do
+        write "src/main/resources2/META-INF/persistence.xml"
+        write "src/main/resources2/META-INF/orm.xml"
+
+        @foo = define "foo" do
+          iml.main_source_directories << "src/main/resources2"
+          iml.add_jpa_facet
+
+        end
+        invoke_generate_task
+      end
+
+      it "generates a jpa facet with appropriate deployment descriptors" do
+        doc = xml_document(@foo._("foo.iml"))
+        facet_xpath = ensure_facet_xpath(doc, 'jpa', 'JPA')
+        deployment_descriptor_xpath = "#{facet_xpath}/configuration/deploymentDescriptor"
+        doc.should have_xpath("#{deployment_descriptor_xpath}[@name='persistence.xml',  url='file://$MODULE_DIR$/src/main/resources2/META-INF/persistence.xml']")
+        doc.should have_xpath("#{deployment_descriptor_xpath}[@name='orm.xml',  url='file://$MODULE_DIR$/src/main/resources2/META-INF/orm.xml']")
+      end
+    end
+
+    describe "using add_jpa_facet with hibernate configured in persistence.xml" do
+      before do
+        write "src/main/resources/META-INF/persistence.xml", "org.hibernate.ejb.HibernatePersistence"
+        write "src/main/resources/META-INF/orm.xml"
+
+        @foo = define "foo" do
+          iml.add_jpa_facet
+        end
+        invoke_generate_task
+      end
+
+      it "generates a jpa facet with default settings" do
+        doc = xml_document(@foo._("foo.iml"))
+        facet_xpath = ensure_facet_xpath(doc, 'jpa', 'JPA')
+        doc.should have_xpath("#{facet_xpath}/configuration/setting[@name='validation-enabled', @value='true']")
+        doc.should have_xpath("#{facet_xpath}/configuration/setting[@name='provider-name', @value='Hibernate']")
+      end
+    end
+
+    describe "using add_jpa_facet with eclipselink configured in persistence.xml" do
+      before do
+        write "src/main/resources/META-INF/persistence.xml", "org.eclipse.persistence.jpa.PersistenceProvider"
+        write "src/main/resources/META-INF/orm.xml"
+
+        @foo = define "foo" do
+          iml.add_jpa_facet
+        end
+        invoke_generate_task
+      end
+
+      it "generates a jpa facet with default settings" do
+        doc = xml_document(@foo._("foo.iml"))
+        facet_xpath = ensure_facet_xpath(doc, 'jpa', 'JPA')
+        doc.should have_xpath("#{facet_xpath}/configuration/setting[@name='validation-enabled', @value='true']")
+        doc.should have_xpath("#{facet_xpath}/configuration/setting[@name='provider-name', @value='EclipseLink']")
+      end
+    end
+
+    describe "using add_ejb_facet" do
+      before do
+        write "src/main/java/com/bin/foo.java"
+        write "src/main/resources/WEB-INF/ejb-jar.xml"
+
+        @foo = define "foo" do
+          iml.add_ejb_facet
+        end
+        invoke_generate_task
+      end
+
+      it "generates an ejb facet with appropriate deployment descriptors" do
+        doc = xml_document(@foo._("foo.iml"))
+        ejb_facet_xpath = ensure_facet_xpath(doc, 'ejb', 'EJB')
+        deployment_descriptor_xpath = "#{ejb_facet_xpath}/configuration/descriptors/deploymentDescriptor"
+        doc.should have_xpath("#{deployment_descriptor_xpath}[@name='ejb-jar.xml',  url='file://$MODULE_DIR$/src/main/resources/WEB-INF/ejb-jar.xml']")
+      end
+
+      it "generates an ejb facet with derived ejbRoots" do
+        doc = xml_document(@foo._("foo.iml"))
+        ejb_facet_xpath = ensure_facet_xpath(doc, 'ejb', 'EJB')
+        doc.should have_xpath("#{ejb_facet_xpath}/configuration/ejbRoots/root[@url='file://$MODULE_DIR$/src/main/java']")
+        doc.should have_xpath("#{ejb_facet_xpath}/configuration/ejbRoots/root[@url='file://$MODULE_DIR$/src/main/resources']")
+      end
+    end
+
+    describe "using add_ejb_facet specifying parameters" do
+      before do
+        @foo = define "foo" do
+          iml.add_ejb_facet(:ejb_roots => ["generated/main/java","generated/main/resources"],
+          :deployment_descriptors => ["generated/main/resources/WEB-INF/ejb-jar.xml"])
+        end
+        invoke_generate_task
+      end
+
+      it "generates an ejb facet with appropriate deployment descriptors" do
+        doc = xml_document(@foo._("foo.iml"))
+        ejb_facet_xpath = ensure_facet_xpath(doc, 'ejb', 'EJB')
+        deployment_descriptor_xpath = "#{ejb_facet_xpath}/configuration/descriptors/deploymentDescriptor"
+        doc.should have_xpath("#{deployment_descriptor_xpath}[@name='ejb-jar.xml',  url='file://$MODULE_DIR$/generated/main/resources/WEB-INF/ejb-jar.xml']")
+      end
+
+      it "generates an ejb facet with derived ejbRoots" do
+        doc = xml_document(@foo._("foo.iml"))
+        ejb_facet_xpath = ensure_facet_xpath(doc, 'ejb', 'EJB')
+        doc.should have_xpath("#{ejb_facet_xpath}/configuration/ejbRoots/root[@url='file://$MODULE_DIR$/generated/main/java']")
+        doc.should have_xpath("#{ejb_facet_xpath}/configuration/ejbRoots/root[@url='file://$MODULE_DIR$/generated/main/resources']")
+      end
+    end
+
+    describe "using add_ejb_facet derived from main_source_directories" do
+      before do
+        write "src/main/resources2/WEB-INF/ejb-jar.xml"
+        @foo = define "foo" do
+          iml.main_source_directories << "src/main/resources2"
+          iml.add_ejb_facet
+        end
+        invoke_generate_task
+      end
+
+      it "generates an ejb facet with appropriate deployment descriptors" do
+        doc = xml_document(@foo._("foo.iml"))
+        ejb_facet_xpath = ensure_facet_xpath(doc, 'ejb', 'EJB')
+        deployment_descriptor_xpath = "#{ejb_facet_xpath}/configuration/descriptors/deploymentDescriptor"
+        doc.should have_xpath("#{deployment_descriptor_xpath}[@name='ejb-jar.xml',  url='file://$MODULE_DIR$/src/main/resources2/WEB-INF/ejb-jar.xml']")
+      end
+    end
+
+    describe "using add_jruby_facet" do
+      before do
+
+        @foo = define "foo" do
+          iml.add_jruby_facet
+        end
+        invoke_generate_task
+      end
+
+      it "generates a jruby facet with appropriate sdk" do
+        doc = xml_document(@foo._("foo.iml"))
+        jruby_facet_xpath = ensure_facet_xpath(doc, 'JRUBY', 'JRuby')
+        doc.should have_xpath("#{jruby_facet_xpath}/configuration/JRUBY_FACET_CONFIG_ID[@NAME='JRUBY_SDK_NAME', VALUE='jruby-1.6.7.2']")
+      end
+
+      it "generates a jruby facet with appropriate paths" do
+        doc = xml_document(@foo._("foo.iml"))
+        jruby_facet_xpath = ensure_facet_xpath(doc, 'JRUBY', 'JRuby')
+        prefix = "#{jruby_facet_xpath}/configuration"
+        doc.should have_xpath("#{prefix}/LOAD_PATH[@number='0']")
+        doc.should have_xpath("#{prefix}/I18N_FOLDERS[@number='0']")
+      end
+    end
+
+    describe "using add_jruby_facet with .ruby-version specified" do
+      before do
+
+        write ".ruby-version", "jruby-1.7.2"
+
+        @foo = define "foo" do
+          iml.add_jruby_facet
+        end
+        invoke_generate_task
+      end
+
+      it "generates a jruby facet with appropriate sdk" do
+        doc = xml_document(@foo._("foo.iml"))
+        jruby_facet_xpath = ensure_facet_xpath(doc, 'JRUBY', 'JRuby')
+        doc.should have_xpath("#{jruby_facet_xpath}/configuration/JRUBY_FACET_CONFIG_ID[@NAME='JRUBY_SDK_NAME', VALUE='rbenv: jruby-1.7.2']")
+      end
+
+      it "generates a jruby facet with appropriate paths" do
+        doc = xml_document(@foo._("foo.iml"))
+        jruby_facet_xpath = ensure_facet_xpath(doc, 'JRUBY', 'JRuby')
+        prefix = "#{jruby_facet_xpath}/configuration"
+        doc.should have_xpath("#{prefix}/LOAD_PATH[@number='0']")
+        doc.should have_xpath("#{prefix}/I18N_FOLDERS[@number='0']")
+      end
+    end
+
+    describe "with add_data_source" do
+      before do
+        artifact("org.postgresql:postgresql:jar:9.not-a-version") { |task| write task.name }
+        @foo = define "foo" do
+          ipr.add_data_source("Postgres",
+                              :driver => 'org.postgresql.Driver',
+                              :url => "jdbc:postgresql://127.0.0.1:5432/MyDb",
+                              :username => "MyDBUser",
+                              :password => "secreto",
+                              :dialect => "PostgreSQL",
+                              :classpath => ["org.postgresql:postgresql:jar:9.not-a-version"])
+        end
+        invoke_generate_task
+      end
+
+      it "generates a data source manager with specified data source" do
+        doc = xml_document(@foo._("foo.ipr"))
+        prefix_xpath = "/project/component[@name='DataSourceManagerImpl', @format='xml', @hash='3208837817']/data-source"
+        doc.should have_nodes(prefix_xpath, 1)
+        ds_path = "#{prefix_xpath}[@source='LOCAL', @name='Postgres']"
+        doc.should have_xpath(ds_path)
+        doc.should have_xpath("#{ds_path}/synchronize/text() = 'true'")
+        doc.should have_xpath("#{ds_path}/jdbc-driver/text() = 'org.postgresql.Driver'")
+        doc.should have_xpath("#{ds_path}/jdbc-url/text() = 'jdbc:postgresql://127.0.0.1:5432/MyDb'")
+        doc.should have_xpath("#{ds_path}/user-name/text() = 'MyDBUser'")
+        doc.should have_xpath("#{ds_path}/user-password/text() = 'dfd9dfcfdfc9dfd8dfcfdfdedfc5'")
+        doc.should have_xpath("#{ds_path}/default-dialect/text() = 'PostgreSQL'")
+        doc.should have_xpath("#{ds_path}/libraries/library/url/text() = '$MAVEN_REPOSITORY$/org/postgresql/postgresql/9.not-a-version/postgresql-9.not-a-version.jar'")
+      end
+    end
+
+    describe "with add_postgres_data_source" do
+      before do
+        ENV["USER"] = "Bob"
+        artifact("org.postgresql:postgresql:jar:9.2-1003-jdbc4") { |task| write task.name }
+        @foo = define "foo" do
+          ipr.add_postgres_data_source("Postgres", :database => 'MyDb')
+        end
+        invoke_generate_task
+      end
+
+      it "generates a data source manager with specified data source" do
+        doc = xml_document(@foo._("foo.ipr"))
+        prefix_xpath = "/project/component[@name='DataSourceManagerImpl', @format='xml', @hash='3208837817']/data-source"
+        doc.should have_nodes(prefix_xpath, 1)
+        ds_path = "#{prefix_xpath}[@source='LOCAL', @name='Postgres']"
+        doc.should have_xpath(ds_path)
+        doc.should have_xpath("#{ds_path}/synchronize/text() = 'true'")
+        doc.should have_xpath("#{ds_path}/jdbc-driver/text() = 'org.postgresql.Driver'")
+        doc.should have_xpath("#{ds_path}/jdbc-url/text() = 'jdbc:postgresql://127.0.0.1:5432/MyDb'")
+        doc.should have_xpath("#{ds_path}/user-name/text() = 'Bob'")
+        doc.should have_xpath("#{ds_path}/default-dialect/text() = 'PostgreSQL'")
+        doc.should have_xpath("#{ds_path}/libraries/library/url/text() = '$MAVEN_REPOSITORY$/org/postgresql/postgresql/9.2-1003-jdbc4/postgresql-9.2-1003-jdbc4.jar'")
+      end
+    end
+
+    describe "with add_sql_server_data_source" do
+      before do
+        ENV["USER"] = "Bob"
+        artifact('net.sourceforge.jtds:jtds:jar:1.2.7') { |task| write task.name }
+        @foo = define "foo" do
+          ipr.add_sql_server_data_source("SqlServer", :database => 'MyDb')
+        end
+        invoke_generate_task
+      end
+
+      it "generates a data source manager with specified data source" do
+        doc = xml_document(@foo._("foo.ipr"))
+        prefix_xpath = "/project/component[@name='DataSourceManagerImpl', @format='xml', @hash='3208837817']/data-source"
+        doc.should have_nodes(prefix_xpath, 1)
+        ds_path = "#{prefix_xpath}[@source='LOCAL', @name='SqlServer']"
+        doc.should have_xpath(ds_path)
+
+        doc.should have_xpath("#{ds_path}/synchronize/text() = 'true'")
+        doc.should have_xpath("#{ds_path}/jdbc-driver/text() = 'net.sourceforge.jtds.jdbc.Driver'")
+        doc.should have_xpath("#{ds_path}/jdbc-url/text() = 'jdbc:jtds:sqlserver://127.0.0.1:1433/MyDb'")
+        doc.should have_xpath("#{ds_path}/user-name/text() = 'Bob'")
+        doc.should have_xpath("#{ds_path}/default-dialect/text() = 'TSQL'")
+        doc.should have_xpath("#{ds_path}/libraries/library/url/text() = '$MAVEN_REPOSITORY$/net/sourceforge/jtds/1.2.7/jtds-1.2.7.jar'")
       end
     end
 
@@ -317,6 +849,194 @@ describe Buildr::IntellijIdea do
         doc.should have_nodes(facet_xpath, 2)
         doc.should have_xpath("#{facet_xpath}[@type='jar', @name='MyFancy.jar']")
         doc.should have_xpath("#{facet_xpath}[@type='jar', @name='MyOtherFancy.jar']")
+      end
+    end
+
+    describe "that uses add_jar_artifact with no overrides" do
+      before do
+        write 'foo/bar/src/main/java/foo/Foo.java' # needed so that buildr will treat as a java project
+        artifact('net.sourceforge.jtds:jtds:jar:1.2.7.XX') { |task| write task.name }
+
+        @foo = define "foo" do
+          project.version = '1.0'
+          define "bar" do
+            compile.with 'net.sourceforge.jtds:jtds:jar:1.2.7.XX'
+            package :war
+          end
+          ipr.add_jar_artifact(project("bar"))
+        end
+        invoke_generate_task
+      end
+
+      it "generates an IPR with a jar artifact" do
+        doc = xml_document(@foo._("foo.ipr"))
+        base_xpath = "/project/component[@name='ArtifactManager']/artifact"
+        facet_xpath = "#{base_xpath}[@type='jar' and @name='bar.jar' and @build-on-make='false']"
+        doc.should have_xpath(facet_xpath)
+
+        doc.should have_xpath("#{facet_xpath}/output-path/text() = $PROJECT_DIR$/artifacts/bar")
+        doc.should have_xpath("#{facet_xpath}/root[@id='archive' and @name='bar.jar']/element[@id='module-output' and @name='bar']")
+      end
+    end
+
+    describe "that uses add_jar_artifact with overrides" do
+      before do
+        write 'foo/bar/src/main/java/foo/Foo.java' # needed so that buildr will treat as a java project
+        artifact('net.sourceforge.jtds:jtds:jar:1.2.7.XX') { |task| write task.name }
+
+        @foo = define "foo" do
+          project.version = '1.0'
+          define "bar" do
+            compile.with 'net.sourceforge.jtds:jtds:jar:1.2.7.XX'
+            package :war
+          end
+          ipr.add_jar_artifact(project,
+                               :name => 'bar',
+                               :output_dir => _('bink'),
+                               :build_on_make => true,
+                               :ejb_module_names => ['x'],
+                               :jpa_module_names => ['p'],
+                               :dependencies => [project('bar')])
+        end
+        invoke_generate_task
+      end
+
+      it "generates an IPR with a jar artifact" do
+        doc = xml_document(@foo._("foo.ipr"))
+        base_xpath = "/project/component[@name='ArtifactManager']/artifact"
+        facet_xpath = "#{base_xpath}[@type='jar' and @name='bar.jar' and @build-on-make='true']"
+        doc.should have_xpath(facet_xpath)
+
+        doc.should have_xpath("#{facet_xpath}/output-path/text() = $PROJECT_DIR$/bink")
+        doc.should have_xpath("#{facet_xpath}/root[@id='archive' and @name='bar.jar']/element[@id='module-output' and @name='bar']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='archive' and @name='bar.jar']/element[@id='jpa-descriptors' and @facet='p/jpa/JPA']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='archive' and @name='bar.jar']/element[@id='javaee-facet-resources' and @facet='x/ejb/EJB']")
+      end
+    end
+
+    describe "that uses add_exploded_ejb_artifact with overrides" do
+      before do
+        write 'foo/bar/src/main/java/foo/Foo.java' # needed so that buildr will treat as a java project
+        artifact('net.sourceforge.jtds:jtds:jar:1.2.7.XX') { |task| write task.name }
+
+        @foo = define "foo" do
+          project.version = '1.0'
+          define "bar" do
+            compile.with 'net.sourceforge.jtds:jtds:jar:1.2.7.XX'
+            package :jar
+          end
+          ipr.add_exploded_ejb_artifact(project("bar"),
+                                        :ejb_module_names => ['x'],
+                                        :jpa_module_names => ['p'])
+        end
+        invoke_generate_task
+      end
+
+      it "generates an IPR with an ejb artifact" do
+        doc = xml_document(@foo._("foo.ipr"))
+        base_xpath = "/project/component[@name='ArtifactManager']/artifact"
+        facet_xpath = "#{base_xpath}[@type='exploded-ejb' and @name='bar' and @build-on-make='false']"
+        doc.should have_xpath(facet_xpath)
+        doc.should have_xpath("#{facet_xpath}/output-path/text() = $PROJECT_DIR$/artifacts/bar")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='module-output' and @name='bar']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='jpa-descriptors' and @facet='p/jpa/JPA']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='javaee-facet-resources' and @facet='x/ejb/EJB']")
+      end
+    end
+
+    describe "that uses add_exploded_ejb_artifact with no overrides" do
+      before do
+        write 'foo/bar/src/main/java/foo/Foo.java' # needed so that buildr will treat as a java project
+        artifact('net.sourceforge.jtds:jtds:jar:1.2.7.XX') { |task| write task.name }
+
+        @foo = define "foo" do
+          project.version = '1.0'
+          define "bar" do
+            compile.with 'net.sourceforge.jtds:jtds:jar:1.2.7.XX'
+            package :war
+          end
+          ipr.add_exploded_ejb_artifact(project("bar"))
+        end
+        invoke_generate_task
+      end
+
+      it "generates an IPR with an ejb artifact" do
+        doc = xml_document(@foo._("foo.ipr"))
+        base_xpath = "/project/component[@name='ArtifactManager']/artifact"
+        facet_xpath = "#{base_xpath}[@type='exploded-ejb' and @name='bar' and @build-on-make='false']"
+        doc.should have_xpath(facet_xpath)
+
+        doc.should have_xpath("#{facet_xpath}/output-path/text() = $PROJECT_DIR$/artifacts/bar")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='module-output' and @name='bar']")
+      end
+    end
+
+
+    describe "that uses add_exploded_war_artifact with no overrides" do
+      before do
+        write 'foo/bar/src/main/java/foo/Foo.java' # needed so that buildr will treat as a java project
+        artifact('net.sourceforge.jtds:jtds:jar:1.2.7.XX') { |task| write task.name }
+
+        @foo = define "foo" do
+          project.version = '1.0'
+          define "bar" do
+            compile.with 'net.sourceforge.jtds:jtds:jar:1.2.7.XX'
+            package :war
+          end
+          ipr.add_exploded_war_artifact(project("bar"))
+        end
+        invoke_generate_task
+      end
+
+      it "generates an IPR with a war artifact" do
+        doc = xml_document(@foo._("foo.ipr"))
+        base_xpath = "/project/component[@name='ArtifactManager']/artifact"
+        facet_xpath = "#{base_xpath}[@type='exploded-war' and @name='bar' and @build-on-make='false']"
+        doc.should have_xpath(facet_xpath)
+
+        doc.should have_xpath("#{facet_xpath}/output-path/text() = $PROJECT_DIR$/artifacts/bar")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='directory' and @name='WEB-INF']/element[@id='directory', @name='classes']/element[@id='module-output' and @name='bar']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='directory' and @name='WEB-INF']/element[@id='directory', @name='lib']/element[@id='file-copy' and @path='$MAVEN_REPOSITORY$/net/sourceforge/jtds/jtds/1.2.7.XX/jtds-1.2.7.XX.jar']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='javaee-facet-resources' and @facet='bar/web/Web']")
+      end
+    end
+
+    describe "that uses add_exploded_war_artifact with overrides" do
+      before do
+        write 'foo/bar/src/main/java/foo/Foo.java' # needed so that buildr will treat as a java project
+        artifact('net.sourceforge.jtds:jtds:jar:1.2.7.XX') { |task| write task.name }
+
+        @foo = define "foo" do
+          project.version = '1.0'
+          define "bar" do
+            compile.with 'net.sourceforge.jtds:jtds:jar:1.2.7.XX'
+            package :war
+          end
+          ipr.add_exploded_war_artifact(project,
+                                        :name => 'gar',
+                                        :war_module_names => ['x','y'],
+                                        :gwt_module_names => ['p','q'],
+                                        :artifacts => ['baz','biz'],
+                                        :dependencies => ['net.sourceforge.jtds:jtds:jar:1.2.7.XX', project('bar')])
+        end
+        invoke_generate_task
+      end
+
+      it "generates an IPR with a war artifact" do
+        doc = xml_document(@foo._("foo.ipr"))
+        base_xpath = "/project/component[@name='ArtifactManager']/artifact"
+        facet_xpath = "#{base_xpath}[@type='exploded-war' @name='MyFancy.jar', @build-on-make='false']"
+        doc.should have_xpath(facet_xpath)
+
+        doc.should have_xpath("#{facet_xpath}/output-path/text() = $PROJECT_DIR$/artifacts/gar")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='directory' and @name='WEB-INF']/element[@id='directory', @name='classes']/element[@id='module-output' and @name='bar']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='directory' and @name='WEB-INF']/element[@id='directory', @name='lib']/element[@id='file-copy' and @path='$MAVEN_REPOSITORY$/net/sourceforge/jtds/jtds/1.2.7.XX/jtds-1.2.7.XX.jar']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='javaee-facet-resources' and @facet='x/web/Web']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='javaee-facet-resources' and @facet='y/web/Web']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='gwt-compiler-output' and @facet='p/gwt/GWT']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='gwt-compiler-output' and @facet='q/gwt/GWT']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='directory' and @name='WEB-INF']/element[@id='directory', @name='lib']/element[@id='artifact' and @artifact-name='baz.jar']")
+        doc.should have_xpath("#{facet_xpath}/root[@id='root']/element[@id='directory' and @name='WEB-INF']/element[@id='directory', @name='lib']/element[@id='artifact' and @artifact-name='biz.jar']")
       end
     end
 

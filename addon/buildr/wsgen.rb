@@ -131,7 +131,7 @@ module Buildr
         desc "Generate java from wsdl"
         project.task("wsdl2java")
 
-        ws_dir = File.expand_path(options[:output_dir] || project._(:target, :generated, "main/ws"))
+        ws_dir = File.expand_path(options[:output_dir] || project._(:target, :generated, "ws/main/java"))
         project.file(ws_dir)
         project.task('wsdl2java').enhance([ws_dir])
 
@@ -142,7 +142,7 @@ module Buildr
           service = config[:service] || File.basename(wsdl_file, '.wsdl')
           wsdl_location = config[:wsdl_location]
           java_file = "#{ws_dir}/#{pkg.gsub('.', '/')}/#{service}.java"
-          project.file(java_file) do
+          project.file(java_file => [project.file(wsdl_file)]) do
             mkdir_p ws_dir
             command = []
             command << "wsimport"
@@ -172,6 +172,8 @@ module Buildr
         project.compile.from ws_dir
         project.iml.main_source_directories << ws_dir if project.iml?
         project.compile.enhance(['wsdl2java'])
+
+        ws_dir
       end
     end
   end

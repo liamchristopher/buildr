@@ -1,4 +1,62 @@
-1.4.13 (Pending)
+1.4.15 (Pending)
+* Change: Update the jaxb_xjc addon to add output directory to
+          generated IDEA project files.
+* Change: Update the default output directory used in the jaxb_xjc
+          addon to use Maven conventions.
+* Fixed:  Bug in IdeaProject.partition_dependencies resulted in
+          projects being rebuilt if artifacts were added to the
+          project with dependencies on the current project.
+* Fixed:  BUILDR-605 - Ensure package task invokes included paths.
+* Fixed:  BUILDR-609 - compile.from should accept Task argument.
+
+1.4.14 (2013-10-11)
+* Change: Remove highline dependency.
+* Fixed:  BUILDR-682 - Fix the documentation for releasing using
+          your own versioning scheme. Submitted by Jean-Philippe
+          Caruana.
+* Fixed:  BUILDR-681 - Stop empty projects creating target/webapp.
+* Change: Add dependency from generated jws client source directory
+          to the source wsdl in the wsgen addon.
+* Fixed:  Fixed regression in gwt addon due to "pathing_jar"
+          functionality in Java::Commands.java.
+* Change: Support disabling the new "pathing_jar" functionality in
+          Java::Commands.java utility method. Required for tools
+          that introspect the classpath.
+* Change: Update wsgen addon to generate source into a directory
+          hierarchy based on maven conventions.
+* Fixed:  Fixed regression using transitive dependencies due to
+          presence of :scope option in Artifacts.to_hash.
+* Fixed:  Fixed bug in GWT addon that required that the user supply
+          the :dependencies option.
+* Fixed:  Fixed bug in Intellij project file generation when adding
+          a web facet.
+
+1.4.13 (2013-10-02)
+* Fixed:  BUILDR-439 - Fix java command under windows when supplied
+          with extremely long classpath. Submitted By Tammo van Lessen.
+* Fixed:  BUILDR-394 - Fix release task with standalone distribution.
+          Submitted By Tammo van Lessen.
+* Added:  BUILDR-678 - Improve support for gpg signing artifacts
+          using a single method.
+* Fixed:  BUILDR-677 - GPG addon hangs when .asc files are still in
+          target. Submitted By Tammo van Lessen.
+* Added:  Initial support for data source creation in Intellij IDEA
+          project files.
+* Fixed:  BUILDR-676 - Rework Java::Command:java so that it does not
+          reject the :dir option. Reported by John Roth.
+* Added:  Auto-detect jpa provider in Intellij IDEA facet generation if
+          persistence.xml file is present and provider not specified.
+* Added:  Auto-detect jruby version in Intellij IDEA facet generation if
+          .ruby-version file is present.
+* Added:  Improve support for auto-detection of ejb and web descriptors
+          within Intellij IDEA project generation.
+* Change: Default to setting the "User-Agent" header to "Buildr-VERSION"
+          when accessing http resources. Maven Central rejects requests
+          without a User-Agent string.
+* Change: Change default scope of dependencies to 'compile'. Submitted
+          by Ingo Schmidt.
+* Change: BUILDR-675 - Set Cache-Control to 'no-cache' when downloading
+          artifacts. Submitted by Félix Enrique Llorente Pastora.
 * Added:  Initial support for simple integration of an asset pipeline.
           See "Compiling Assets" section in the manual.
 * Fixed:  BUILDR-673 - Fix the option handling of the MultiTest test
@@ -10,19 +68,19 @@
 * Fixed:  Make the package_as_* methods public so that the methods are
           detected in Ruby >= 2.0.0 via the respond_to? method.
 * Change: Updated dependency versions;
-          - rspec-expectations (2.13.0)
-          - rspec-mocks (2.13.1)
-          - rspec-core (2.13.1)
-          - rspec (2.13.0)
+          - rspec-expectations (2.14.3)
+          - rspec-mocks (2.14.3)
+          - rspec-core (2.14.5)
+          - rspec (2.14.1)
           - minitar (0.5.4)
           - ci_reporter (1.8.4)
           - xml-simple (1.1.2)
-          - rjb (1.4.6)
+          - rjb (1.4.8)
           - diff-lcs (1.2.4)
           - builder (3.2.2)
-          - net-ssh (2.6.7)
+          - net-ssh (2.7.0)
           - net-sftp (2.1.2)
-          - hoe (3.6.2)
+          - hoe (3.7.1)
           - json_pure (1.8.0)
           - highline (1.6.19)
 * Fixed:  BUILDR-668 - Specify File::FNM_EXTGLOB for include globs

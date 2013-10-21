@@ -62,7 +62,7 @@ module Buildr #:nodoc:
       #   include(:from=>path) => self
       #   include(*files, :merge=>true) => self
       def include(*args)
-        options = args.pop if Hash === args.last
+        options = Hash === args.last ? args.pop : nil
         files = to_artifacts(args)
         raise 'AchiveTask.include() values should not include nil' if files.include? nil
 
@@ -207,6 +207,7 @@ module Buildr #:nodoc:
         @sources << proc { source }
         @actions << proc do |file_map|
           file = source.to_s
+          file(file).invoke
           unless excluded?(file)
             if File.directory?(file)
               in_directory file do |file, rel_path|

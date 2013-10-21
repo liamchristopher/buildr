@@ -59,14 +59,21 @@ task 'release' => %w{setup-local-site-svn} do
     puts "[X] Uploaded gems and source files to #{spec.name}.rubyforge.org"
   end.call
 
-  # Push gems to Rubyforge.org / Gemcutter
+  # Push gems to Rubyforge.org
   lambda do
     files = FileList["_release/#{spec.version}/dist/*.{gem}"]
     files.each do |f|
-      puts "Push gem #{f} to RubyForge.org / Gemcutter ... "
-      `gem push #{f}`
+      puts "Push gem #{f} to RubyForge.org ... "
+      sh 'gem', 'push', f do |ok, res|
+          if ok
+            puts "[X] Pushed gem #{File.basename(f)} to Rubyforge.org"
+          else
+            puts 'Could not push gem, please do it yourself!'
+            puts %{  gem push #{f}}
+          end
+        end
     end
-    puts '[X] Pushed gems to Rubyforge.org / Gemcutter'
+    puts '[X] Pushed gems to Rubyforge.org'
   end.call
 
   # Create an SVN tag for this release.
@@ -167,3 +174,4 @@ The Apache Buildr Team
 end
 
 task('clobber') { rm_rf '_release' }
+task('clobber') { rm_rf 'announce-email.txt' }

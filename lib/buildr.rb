@@ -28,7 +28,6 @@ autoload :YAML, 'yaml'
 autoload :REXML, 'rexml/document'
 autoload :XmlSimple, 'xmlsimple'
 autoload :Builder, 'builder' # A different kind of buildr, one we use to create XML.
-require 'highline/import'
 autoload :RSpec, 'rspec'
 require 'erb'
 require 'find'
@@ -36,8 +35,10 @@ require 'uri'
 require 'stringio'
 require 'fileutils'
 require 'orderedhash'
+require 'securerandom'
 
 require 'buildr/core/util'
+require 'buildr/core/console'
 require 'buildr/core/common'
 require 'buildr/core/application'
 require 'buildr/core/jrebel'
@@ -104,3 +105,6 @@ class Object #:nodoc:
   end
 end
 
+# Need to set this again as jruby was not correctly
+# initialized, the first time it was called
+Buildr::Console.use_color = $stdout.isatty

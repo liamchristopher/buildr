@@ -60,7 +60,7 @@ module Buildr
         properties["gwt.persistentunitcache"] = "true"
         properties["gwt.persistentunitcachedir"] = unit_cache_dir
 
-        Java::Commands.java 'com.google.gwt.dev.Compiler', *(args + [{:classpath => cp, :properties => properties, :java_args => options[:java_args]}])
+        Java::Commands.java 'com.google.gwt.dev.Compiler', *(args + [{:classpath => cp, :properties => properties, :java_args => options[:java_args], :pathing_jar => false}])
       end
 
       def superdev_dependencies
@@ -83,7 +83,7 @@ module Buildr
 
         java_args = options[:java_args] ? options[:java_args].dup : {}
 
-        Java::Commands.java 'com.google.gwt.dev.codeserver.CodeServer', *(args + [{:classpath => cp, :properties => properties, :java_args => java_args}])
+        Java::Commands.java 'com.google.gwt.dev.codeserver.CodeServer', *(args + [{:classpath => cp, :properties => properties, :java_args => java_args, :pathing_jar => false}])
       end
     end
 
@@ -96,11 +96,11 @@ module Buildr
         artifacts = (project.compile.sources + project.resources.sources).collect do |a|
           a.is_a?(String) ? file(a) : a
         end
-        dependencies = artifacts(options[:dependencies]) || project.compile.dependencies
+        dependencies = options[:dependencies] ? artifacts(options[:dependencies]) : project.compile.dependencies
 
         unit_cache_dir = project._(:target, :gwt, :unit_cache_dir, output_key)
 
-        task = file(output_dir) do
+        task = project.file(output_dir) do
           Buildr::GWT.gwtc_main(module_names, dependencies + artifacts, output_dir, unit_cache_dir, options.dup)
         end
         task.enhance(dependencies)

@@ -15,21 +15,16 @@
 
 require File.expand_path(File.join(File.dirname(__FILE__), '..', 'spec_helpers'))
 
-
-
 describe Buildr::Compiler::Ecj do
 
   before(:all) do
     #Make ecj appear as a compiler that applies:
     class Buildr::Compiler::Ecj
       class << self
-
         def applies_to?(project, task)
           paths = task.sources + [sources].flatten.map { |src| Array(project.path_to(:source, task.usage, src.to_sym)) }
-          paths.flatten!
-          ext_glob = Array(source_ext).join(',')
-
-          paths.each { |path| 
+          paths.flatten.each { |path|
+            path = path.to_s
             Find.find(path) {|found|
               if (!File.directory?(found)) && found.match(/.*\.#{Array(source_ext).join('|')}/)
                 return true
@@ -97,11 +92,8 @@ describe Buildr::Compiler::Ecj do
     #Make ecj appear as a compiler that doesn't apply:
     module Buildr
       module Compiler
-
         class Ecj
-
           class << self
-
             def applies_to?(project, task)
               false
             end

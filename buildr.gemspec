@@ -56,43 +56,36 @@ for those one-off tasks, with a language that's a joy to use.
   # Tested against these dependencies.
   spec.add_dependency 'rake',                 '0.9.2.2'
   spec.add_dependency 'builder',              '3.2.2'
-  spec.add_dependency 'net-ssh',              '2.6.7'
+  spec.add_dependency 'net-ssh',              '2.7.0'
   spec.add_dependency 'net-sftp',             '2.1.2'
   spec.add_dependency 'rubyzip',              '0.9.9'
-  # Highline 1.6.15 does not seem to work on windows. We should
-  # investigate the root cause at a later stage before upgrading
-  spec.add_dependency 'highline',             '1.6.19'
   spec.add_dependency 'json_pure',            '1.8.0'
   spec.add_dependency 'rubyforge',            '2.0.4'
-  spec.add_dependency 'hoe',                  '3.6.2'
-  spec.add_dependency 'rjb',                  '1.4.6' if ($platform.to_s == 'x86-mswin32' || $platform.to_s == 'ruby')
+  spec.add_dependency 'hoe',                  '3.7.1'
+  spec.add_dependency 'rjb',                  '1.4.8' if ($platform.to_s == 'x86-mswin32' || $platform.to_s == 'ruby')
   spec.add_dependency 'atoulme-Antwrap',      '~> 0.7.4'
   spec.add_dependency 'diff-lcs',             '1.2.4'
-  spec.add_dependency 'rspec-expectations',   '2.13.0'
-  spec.add_dependency 'rspec-mocks',          '2.13.1'
-  spec.add_dependency 'rspec-core',           '2.13.1'
-  spec.add_dependency 'rspec',                '2.13.0'
+  spec.add_dependency 'rspec-expectations',   '2.14.3'
+  spec.add_dependency 'rspec-mocks',          '2.14.3'
+  spec.add_dependency 'rspec-core',           '2.14.5'
+  spec.add_dependency 'rspec',                '2.14.1'
   spec.add_dependency 'xml-simple',           '1.1.2'
   spec.add_dependency 'minitar',              '0.5.4'
   spec.add_dependency 'jruby-openssl',        '~> 0.8.2' if $platform.to_s == 'java'
   spec.add_dependency 'bundler'
   spec.add_dependency 'orderedhash'
+  spec.add_dependency 'win32console'          '1.3.2' if $platform.to_s == 'x86-mswin32'
 
   # Unable to get this consistently working under jruby on windows
   unless $platform.to_s == 'java'
-    spec.add_development_dependency 'jekyll', '0.11.2'
+    spec.add_development_dependency 'jekyll', '1.2.1'
     spec.add_development_dependency 'RedCloth', '4.2.9'
     spec.add_development_dependency 'jekylltask', '1.1.0'
-    spec.add_development_dependency 'rdoc', '3.12'
+    spec.add_development_dependency 'rdoc', '4.0.1'
   end
 
-  spec.add_development_dependency 'ci_reporter', '1.8.4'
-
-  # NOTE: Must update all-in-one.rake if this is updated
-  # ffi-ncurses Fails on several varieties of Ubuntu due to being unable to locate ncursesw library
-  # Should be able to just disable it
-  #spec.add_development_dependency 'ffi-ncurses', '0.4.0' if $platform.to_s == 'java'
-  spec.add_development_dependency 'win32console' if $platform.to_s == 'x86-mswin32'
+  spec.add_development_dependency 'rspec-retry', '0.2.1'
+  spec.add_development_dependency 'ci_reporter', '1.9.0'
   # Ideally we would depend on psych when the platform has >= 1.9.2 support and jruby platform version > 1.6.6
   #spec.add_development_dependency 'psych' if RUBY_VERSION >= '1.9.2'
   spec.add_development_dependency 'pygmentize', '0.0.3'

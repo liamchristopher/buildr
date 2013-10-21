@@ -100,9 +100,9 @@ module Buildr #:nodoc:
         @components ||= []
       end
 
-      def create_composite_component(name, components)
+      def create_composite_component(name, attrs, components)
         return nil if components.empty?
-        component = self.create_component(name)
+        component = self.create_component(name, attrs)
         components.each do |element|
           element = element.call if element.is_a?(Proc)
           component.add_element element
@@ -298,60 +298,102 @@ module Buildr #:nodoc:
 
       def add_web_facet(options = {})
         name = options[:name] || "Web"
-        url_base = options[:url_base] || "/"
-        default_webroots = project.assets.paths
+        default_webroots = {}
+        buildr_project.assets.paths.each {|p| default_webroots[p] = "/" }
         webroots = options[:webroots] || default_webroots
-        default_web_xml = "#{buildr_project._(:source, :main, :webapp)}/WEB-INF/web.xml"
-        web_xml = options[:web_xml] || default_web_xml
-        version = options[:version] || "3.0"
+        default_deployment_descriptors = []
+        ['web.xml', 'sun-web.xml', 'glassfish-web.xml', 'jetty-web.xml', 'geronimo-web.xml',
+         'context.xml', 'weblogic.xml',
+         'jboss-deployment-structure.xml', 'jboss-web.xml',
+         'ibm-web-bnd.xml', 'ibm-web-ext.xml', 'ibm-web-ext-pme.xml'].
+          each do |descriptor|
+          webroots.each_pair do |path, relative_url|
+            next unless relative_url == "/"
+            d = "#{path}/WEB-INF/#{descriptor}"
+            default_deployment_descriptors << d if File.exist?(d)
+          end
+        end
+        deployment_descriptors = options[:deployment_descriptors] || default_deployment_descriptors
 
         add_facet(name, "web") do |f|
           f.configuration do |c|
             c.descriptors do |d|
-              if File.exist?(web_xml) || default_web_xml != web_xml
-                d.deploymentDescriptor :name => 'web.xml', :url => file_path(web_xml), :optional => "true", :version => version
+              deployment_descriptors.each do |deployment_descriptor|
+                d.deploymentDescriptor :name => File.basename(deployment_descriptor), :url => file_path(deployment_descriptor)
               end
             end
             c.webroots do |w|
-              webroots.each do |webroot|
-                w.root :url => file_path(webroot), :relative => url_base
+              webroots.each_pair do |webroot, relative_url|
+                w.root :url => file_path(webroot), :relative => relative_url
               end
             end
           end
+          default_enable_jsf = webroots.keys.any?{|webroot| File.exist?("#{webroot}/WEB-INF/faces-config.xml")}
+          enable_jsf = options[:enable_jsf].nil? ? default_enable_jsf : options[:enable_jsf]
+          enable_jsf = false if root_project.ipr? && root_project.ipr.version >= '13'
+          f.facet(:type => 'jsf', :name => 'JSF') do |jsf|
+            jsf.configuration
+          end if enable_jsf
         end
       end
 
       def add_jruby_facet(options = {})
         name = options[:name] || "JRuby"
-        jruby_version = options[:jruby_version] || "jruby-1.5.2-p249"
+
+        ruby_version_file = buildr_project._('.ruby-version')
+        default_jruby_version = File.exist?(ruby_version_file) ? "rbenv: #{IO.read(ruby_version_file).strip}" : 'jruby-1.6.7.2'
+        jruby_version = options[:jruby_version] || default_jruby_version
         add_facet(name, "JRUBY") do |f|
-          f.configuration(:number => 0) do |c|
+          f.configuration do |c|
             c.JRUBY_FACET_CONFIG_ID :NAME => "JRUBY_SDK_NAME", :VALUE => jruby_version
+            c.LOAD_PATH :number => "0"
+            c.I18N_FOLDERS :number => "0"
           end
         end
       end
 
       def add_jpa_facet(options = {})
         name = options[:name] || "JPA"
+
+        source_roots = [buildr_project.iml.main_source_directories, buildr_project.compile.sources, buildr_project.resources.sources].flatten.compact
+        default_deployment_descriptors = []
+        ['orm.xml', 'persistence.xml'].
+          each do |descriptor|
+          source_roots.each do |path|
+            d = "#{path}/META-INF/#{descriptor}"
+            default_deployment_descriptors << d if File.exist?(d)
+          end
+        end
+        deployment_descriptors = options[:deployment_descriptors] || default_deployment_descriptors
+
         factory_entry = options[:factory_entry] || buildr_project.name.to_s
         validation_enabled = options[:validation_enabled].nil? ? true : options[:validation_enabled]
-        provider_enabled = options[:provider_enabled] || 'Hibernate'
-        default_persistence_xml = buildr_project._(:source, :main, :resources, "META-INF/persistence.xml")
-        persistence_xml = options[:persistence_xml] || default_persistence_xml
-        default_orm_xml = buildr_project._(:source, :main, :resources, "META-INF/orm.xml")
-        orm_xml = options[:orm_xml] || default_orm_xml
+        if options[:provider_enabled]
+          provider = options[:provider_enabled]
+        else
+          provider = nil
+          {'org.hibernate.ejb.HibernatePersistence' => 'Hibernate',
+           'org.eclipse.persistence.jpa.PersistenceProvider' => 'EclipseLink'}.
+            each_pair do |match, candidate_provider|
+            deployment_descriptors.each do |descriptor|
+              if File.exist?(descriptor) && /#{Regexp.escape(match)}/ =~ IO.read(descriptor)
+                provider = candidate_provider
+              end
+            end
+          end
+        end
+
         add_facet(name, "jpa") do |f|
           f.configuration do |c|
-            c.setting :name => "validation-enabled", :value => validation_enabled
-            c.setting :name => "provider-name", :value => provider_enabled
+            if provider
+              c.setting :name => "validation-enabled", :value => validation_enabled
+              c.setting :name => "provider-name", :value => provider
+            end
             c.tag!('datasource-mapping') do |ds|
               ds.tag!('factory-entry', :name => factory_entry)
             end
-            if File.exist?(persistence_xml) || default_persistence_xml != persistence_xml
-              c.deploymentDescriptor :name => 'persistence.xml', :url => file_path(persistence_xml)
-            end
-            if File.exist?(orm_xml) || default_orm_xml != orm_xml
-              c.deploymentDescriptor :name => 'orm.xml', :url => file_path(orm_xml)
+            deployment_descriptors.each do |descriptor|
+              c.deploymentDescriptor :name => File.basename(descriptor), :url => file_path(descriptor)
             end
           end
         end
@@ -359,15 +401,27 @@ module Buildr #:nodoc:
 
       def add_ejb_facet(options = {})
         name = options[:name] || "EJB"
-        default_ejb_xml = buildr_project._(:source, :main, :resources, "WEB-INF/ejb-jar.xml")
-        ejb_xml = options[:ejb_xml] || default_ejb_xml
-        ejb_roots = options[:ejb_roots] || [buildr_project.compile.sources, buildr_project.resources.sources].flatten
+
+        default_ejb_roots = [buildr_project.iml.main_source_directories, buildr_project.compile.sources, buildr_project.resources.sources].flatten.compact
+        ejb_roots = options[:ejb_roots] || default_ejb_roots
+
+        default_deployment_descriptors = []
+        ['ejb-jar.xml', 'glassfish-ejb-jar.xml', 'ibm-ejb-jar-bnd.xml', 'ibm-ejb-jar-ext-pme.xml', 'ibm-ejb-jar-ext.xml',
+         'jboss.xml', 'jbosscmp-jdbc.xml', 'openejb-jar.xml', 'sun-cmp-mapping.xml', 'sun-ejb-jar.xml',
+         'weblogic-cmp-rdbms-jar.xml', 'weblogic-ejb-jar.xml'].
+          each do |descriptor|
+          ejb_roots.each do |path|
+            d = "#{path}/WEB-INF/#{descriptor}"
+            default_deployment_descriptors << d if File.exist?(d)
+          end
+        end
+        deployment_descriptors = options[:deployment_descriptors] || default_deployment_descriptors
 
         add_facet(name, "ejb") do |facet|
           facet.configuration do |c|
             c.descriptors do |d|
-              if File.exist?(ejb_xml) || default_ejb_xml != ejb_xml
-                d.deploymentDescriptor :name => 'ejb-jar.xml', :url => file_path(ejb_xml)
+              deployment_descriptors.each do |deployment_descriptor|
+                d.deploymentDescriptor :name => File.basename(deployment_descriptor), :url => file_path(deployment_descriptor)
               end
             end
             c.ejbRoots do |e|
@@ -380,6 +434,14 @@ module Buildr #:nodoc:
       end
 
       protected
+
+      def root_project
+        p = buildr_project
+        while p.parent
+          p = p.parent
+        end
+        p
+      end
 
       def test_dependency_details
         main_dependencies_paths = main_dependencies.map(&:to_s)
@@ -415,7 +477,7 @@ module Buildr #:nodoc:
       end
 
       def facet_component
-        create_composite_component("FacetManager", self.facets)
+        create_composite_component("FacetManager", {}, self.facets)
       end
 
       def module_root_component
@@ -553,15 +615,22 @@ module Buildr #:nodoc:
     class IdeaProject < IdeaFile
       attr_accessor :extra_modules
       attr_accessor :artifacts
+      attr_accessor :data_sources
       attr_accessor :configurations
       attr_writer :jdk_version
+      attr_writer :version
 
       def initialize(buildr_project)
         super()
         @buildr_project = buildr_project
         @extra_modules = []
         @artifacts = []
+        @data_sources = []
         @configurations = []
+      end
+
+      def version
+        @version || "12"
       end
 
       def jdk_version
@@ -584,47 +653,86 @@ module Buildr #:nodoc:
         end
       end
 
-      def add_exploded_war_artifact(project, options = {})
-        artifact_name = options[:name] || project.iml.id
-        build_on_make = options[:build_on_make].nil? ? false : options[:build_on_make]
+      def add_postgres_data_source(name, options = {})
+        if options[:url].nil? && options[:database]
+         default_url = "jdbc:postgresql://#{(options[:host] || "127.0.0.1")}:#{(options[:port] || "5432")}/#{options[:database]}"
+        end
 
-        add_artifact(artifact_name, "exploded-war", build_on_make) do |xml|
+        params = {
+          :driver => 'org.postgresql.Driver',
+          :url => default_url,
+          :username => ENV["USER"],
+          :dialect => 'PostgreSQL',
+          :classpath => ["org.postgresql:postgresql:jar:9.2-1003-jdbc4"]
+        }.merge(options)
+        add_data_source(name, params)
+      end
+
+      def add_sql_server_data_source(name, options = {})
+        if options[:url].nil? && options[:database]
+          default_url = "jdbc:jtds:sqlserver://#{(options[:host] || "127.0.0.1")}:#{(options[:port] || "1433")}/#{options[:database]}"
+        end
+
+        params = {
+          :driver => 'net.sourceforge.jtds.jdbc.Driver',
+          :url => default_url,
+          :username => ENV["USER"],
+          :dialect => 'TSQL',
+          :classpath => ['net.sourceforge.jtds:jtds:jar:1.2.7']
+        }.merge(options)
+        add_data_source(name, params)
+      end
+
+      def add_data_source(name, options = {})
+        add_to_composite_component(self.data_sources) do |xml|
+          data_source_options = {
+            :source => "LOCAL",
+            :name => name,
+            :uuid => Buildr::Util.uuid
+          }
+          classpath = options[:classpath] || []
+          xml.tag!("data-source", data_source_options) do |xml|
+            xml.tag!("synchronize", (options[:synchronize]||"true"))
+            xml.tag!("jdbc-driver", options[:driver]) if options[:driver]
+            xml.tag!("jdbc-url", options[:url]) if options[:url]
+            xml.tag!("user-name", options[:username]) if options[:username]
+            xml.tag!("user-password", encrypt(options[:password])) if options[:password]
+            xml.tag!("default-dialect", options[:dialect]) if options[:dialect]
+
+            xml.libraries do |xml|
+              classpath.each do |classpath_element|
+                a = Buildr.artifact(classpath_element)
+                a.invoke
+                xml.library do |xml|
+                  xml.tag!("url", resolve_path(a.to_s))
+                end
+              end
+            end if classpath.size > 0
+          end
+        end
+      end
+
+      def add_exploded_war_artifact(project, options = {})
+        artifact_name = to_artifact_name(project, options)
+        artifacts = options[:artifacts] || []
+
+        add_artifact(artifact_name, "exploded-war", build_on_make(options)) do |xml|
           dependencies = (options[:dependencies] || ([project] + project.compile.dependencies)).flatten
           libraries, projects = partition_dependencies(dependencies)
 
-          ## The content here can not be indented
-          output_dir = options[:output_dir] || project._(:artifacts, artifact_name)
-          xml.tag!('output-path', output_dir)
-
+          emit_output_path(xml, artifact_name, options)
           xml.root :id => "root" do
             xml.element :id => "directory", :name => "WEB-INF" do
               xml.element :id => "directory", :name => "classes" do
-                projects.each do |p|
-                  xml.element :id => "module-output", :name => p.iml.id
-                end
-                if options[:enable_jpa]
-                  module_names = options[:jpa_module_names] || [project.iml.id]
-                  module_names.each do |module_name|
-                    facet_name = options[:jpa_facet_name] || "JPA"
-                    xml.element :id => "jpa-descriptors", :facet => "#{module_name}/jpa/#{facet_name}"
-                  end
-                end
-                if options[:enable_ejb]
-                  module_names = options[:ejb_module_names] || [project.iml.id]
-                  module_names.each do |module_name|
-                    facet_name = options[:ejb_facet_name] || "EJB"
-                    xml.element :id => "javaee-facet-resources", :facet => "#{module_name}/ejb/#{facet_name}"
-                  end
-                end
+                artifact_content(xml, project, projects, options)
               end
               xml.element :id => "directory", :name => "lib" do
-                libraries.each(&:invoke).map(&:to_s).each do |dependency_path|
-                  xml.element :id => "file-copy", :path => resolve_path(dependency_path)
-                end
+                emit_libraries(xml, libraries)
+                emit_jar_artifacts(xml, artifacts)
               end
             end
 
-            if options[:enable_war].nil? || options[:enable_war]
+            if options[:enable_war].nil? || options[:enable_war] || (options[:war_module_names] && options[:war_module_names].size > 0)
               module_names = options[:war_module_names] || [project.iml.id]
               module_names.each do |module_name|
                 facet_name = options[:war_facet_name] || "Web"
@@ -632,7 +740,7 @@ module Buildr #:nodoc:
               end
             end
 
-            if options[:enable_gwt]
+            if options[:enable_gwt] || (options[:gwt_module_names] && options[:gwt_module_names].size > 0)
               module_names = options[:gwt_module_names] || [project.iml.id]
               module_names.each do |module_name|
                 facet_name = options[:gwt_facet_name] || "GWT"
@@ -644,75 +752,52 @@ module Buildr #:nodoc:
       end
 
       def add_exploded_ear_artifact(project, options ={})
+        artifact_name = to_artifact_name(project, options)
 
-        artifact_name = options[:name] || project.iml.id
-        build_on_make = options[:build_on_make].nil? ? true : options[:build_on_make]
-
-        add_artifact(artifact_name, "exploded-ear", build_on_make) do |xml|
+        add_artifact(artifact_name, "exploded-ear", build_on_make(options)) do |xml|
           dependencies = (options[:dependencies] || ([project] + project.compile.dependencies)).flatten
           libraries, projects = partition_dependencies(dependencies)
 
-          ## The content here can not be indented
-          output_dir = options[:output_dir] || project._(:artifacts, artifact_name)
-          xml.tag!('output-path', output_dir)
-
+          emit_output_path(xml, artifact_name, options)
           xml.root :id => "root" do
-
-            xml.element :id => "module-output", :name => project.iml.id
-
-            projects.each do |p|
-              xml.element :id => "directory", :name => p.iml.id do
-                xml.element :id => "module-output", :name => p.iml.id
-              end
-            end
-
+            emit_module_output(xml, projects)
             xml.element :id => "directory", :name => "lib" do
-              libraries.each(&:invoke).map(&:to_s).each do |dependency_path|
-                xml.element :id => "file-copy", :path => resolve_path(dependency_path)
-              end
+              emit_libraries(xml, libraries)
             end
+          end
+        end
+      end
 
+      def add_jar_artifact(project, options = {})
+        artifact_name = to_artifact_name(project, options)
+
+        dependencies = (options[:dependencies] || [project]).flatten
+        libraries, projects = partition_dependencies(dependencies)
+        raise "Unable to add non-project dependencies (#{libraries.inspect}) to jar artifact" if libraries.size > 0
+
+        jar_name = "#{artifact_name}.jar"
+        add_artifact(jar_name, "jar", build_on_make(options)) do |xml|
+          emit_output_path(xml, artifact_name, options)
+          xml.root(:id => "archive", :name => jar_name) do
+            artifact_content(xml, project, projects, options)
           end
         end
       end
 
       def add_exploded_ejb_artifact(project, options = {})
+        artifact_name = to_artifact_name(project, options)
 
-        artifact_name = options[:name] || project.iml.id
-        build_on_make = options[:build_on_make].nil? ? true : options[:build_on_make]
-
-        add_artifact(artifact_name, "exploded-ejb", build_on_make) do |xml|
-          dependencies = (options[:dependencies] || ([project] + project.compile.dependencies)).flatten
+        add_artifact(artifact_name, "exploded-ejb", build_on_make(options)) do |xml|
+          dependencies = (options[:dependencies] || [project]).flatten
           libraries, projects = partition_dependencies(dependencies)
+          raise "Unable to add non-project dependencies (#{libraries.inspect}) to ejb artifact" if libraries.size > 0
 
-          ## The content here can not be indented
-          output_dir = options[:output_dir] || project._(:artifacts, artifact_name)
-          xml.tag!('output-path', output_dir)
-
+          emit_output_path(xml, artifact_name, options)
           xml.root :id => "root" do
-
-            xml.element :id => "module-output", :name => project.iml.id
-
-            if options[:enable_jpa]
-              module_names = options[:jpa_module_names] || [project.iml.id]
-              module_names.each do |module_name|
-                facet_name = options[:jpa_facet_name] || "JPA"
-                xml.element :id => "jpa-descriptors", :facet => "#{module_name}/jpa/#{facet_name}"
-              end
-            end
-
-            if options[:enable_ejb].nil? || options[:enable_ejb]
-              module_names = options[:ejb_module_names] || [project.iml.id]
-              module_names.each do |module_name|
-                facet_name = options[:ejb_facet_name] || "EJB"
-                xml.element :id => "javaee-facet-resources", :facet => "#{module_name}/ejb/#{facet_name}"
-              end
-            end
-
+            artifact_content(xml, project, projects, options)
           end
         end
       end
-
 
       def add_gwt_configuration(launch_page, project, options = {})
         name = options[:name] || "Run #{launch_page}"
@@ -733,6 +818,12 @@ module Buildr #:nodoc:
 
       protected
 
+      def artifact_content(xml, project, projects, options)
+        emit_module_output(xml, projects)
+        emit_jpa_descriptors(xml, project, options)
+        emit_ejb_descriptors(xml, project, options)
+      end
+
       def extension
         "ipr"
       end
@@ -748,6 +839,7 @@ module Buildr #:nodoc:
           lambda { modules_component },
           vcs_component,
           artifacts_component,
+          lambda { data_sources_component },
           configurations_component,
           lambda { framework_detection_exclusion_component }
         ]
@@ -771,11 +863,11 @@ module Buildr #:nodoc:
         attribs["version"] = "2"
         attribs["languageLevel"] = "JDK_#{self.jdk_version.gsub('.', '_')}"
         attribs["assert-keyword"] = "true"
-        attribs["jdk-15"] = "true"
+        attribs["jdk-15"] = (jdk_version >= "1.5").to_s
         attribs["project-jdk-name"] = self.jdk_version
         attribs["project-jdk-type"] = "JavaSDK"
         create_component("ProjectRootManager", attribs) do |xml|
-          xml.output("url" => "file://$PROJECT_DIR$/out")
+          xml.output("url" => file_path(buildr_project._(:target, :idea, :project_out)))
         end
       end
 
@@ -840,12 +932,16 @@ module Buildr #:nodoc:
         end
       end
 
+      def data_sources_component
+        create_composite_component("DataSourceManagerImpl", {:format => "xml", :hash => "3208837817"}, self.data_sources)
+      end
+
       def artifacts_component
-        create_composite_component("ArtifactManager", self.artifacts)
+        create_composite_component("ArtifactManager", {}, self.artifacts)
       end
 
       def configurations_component
-        create_composite_component("ProjectRunConfigurationManager", self.configurations)
+        create_composite_component("ProjectRunConfigurationManager", {}, self.configurations)
       end
 
       def resolve_path(path)
@@ -854,6 +950,62 @@ module Buildr #:nodoc:
 
     private
 
+      def to_artifact_name(project, options)
+        options[:name] || project.iml.id
+      end
+
+      def build_on_make(options)
+        options[:build_on_make].nil? ? false : options[:build_on_make]
+      end
+
+      def emit_jar_artifacts(xml, artifacts)
+        artifacts.each do |p|
+          xml.element :id => "artifact", 'artifact-name' => "#{p}.jar"
+        end
+      end
+
+      def emit_libraries(xml, libraries)
+        libraries.each(&:invoke).map(&:to_s).each do |dependency_path|
+          xml.element :id => "file-copy", :path => resolve_path(dependency_path)
+        end
+      end
+
+      def emit_module_output(xml, projects)
+        projects.each do |p|
+          xml.element :id => "module-output", :name => p.iml.id
+        end
+      end
+
+      def emit_output_path(xml, artifact_name, options)
+        ## The content here can not be indented
+        output_dir = options[:output_dir] || buildr_project._(:artifacts, artifact_name)
+        xml.tag!('output-path', resolve_path(output_dir))
+      end
+
+      def emit_ejb_descriptors(xml, project, options)
+        if options[:enable_ejb] || (options[:ejb_module_names] && options[:ejb_module_names].size > 0)
+          module_names = options[:ejb_module_names] || [project.iml.id]
+          module_names.each do |module_name|
+            facet_name = options[:ejb_facet_name] || "EJB"
+            xml.element :id => "javaee-facet-resources", :facet => "#{module_name}/ejb/#{facet_name}"
+          end
+        end
+      end
+
+      def emit_jpa_descriptors(xml, project, options)
+        if options[:enable_jpa] || (options[:jpa_module_names] && options[:jpa_module_names].size > 0)
+          module_names = options[:jpa_module_names] || [project.iml.id]
+          module_names.each do |module_name|
+            facet_name = options[:jpa_facet_name] || "JPA"
+            xml.element :id => "jpa-descriptors", :facet => "#{module_name}/jpa/#{facet_name}"
+          end
+        end
+      end
+
+      def encrypt(password)
+        password.bytes.inject("") { |x, y| x + (y ^ 0xdfaa).to_s(16) }
+      end
+
       def partition_dependencies(dependencies)
         libraries = []
         projects = []
@@ -861,7 +1013,8 @@ module Buildr #:nodoc:
         dependencies.each do |dependency|
           artifacts = Buildr.artifacts(dependency)
           artifacts_as_strings = artifacts.map(&:to_s)
-          project = Buildr.projects.detect do |project|
+          all_projects = Buildr::Project.instance_variable_get("@projects").keys
+          project = Buildr.projects(all_projects).detect do |project|
             [project.packages, project.compile.target, project.resources.target, project.test.compile.target, project.test.resources.target].flatten.
               detect { |component| artifacts_as_strings.include?(component.to_s) }
           end
