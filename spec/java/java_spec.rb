@@ -22,7 +22,7 @@ unless RUBY_PLATFORM =~ /java/
     before do
       @old_home, ENV['JAVA_HOME'] = ENV['JAVA_HOME'], nil
       @old_env_java = Object.module_eval { remove_const :ENV_JAVA }
-      RbConfig::CONFIG.should_receive(:[]).with('host_os').and_return('darwin0.9')
+      RbConfig::CONFIG.should_receive(:[]).at_least(:once).with('host_os').and_return('darwin0.9')
     end
 
     it 'should point to default JVM' do
@@ -63,7 +63,7 @@ describe 'Java.tools_jar' do
       write 'jdk/lib/tools.jar'
       ENV['JAVA_HOME'] = File.expand_path('jdk')
     end
-  
+
     it 'should return the path to tools.jar' do
       Java.tools_jar.should point_to_path('jdk/lib/tools.jar')
     end
@@ -75,7 +75,7 @@ describe 'Java.tools_jar' do
       write 'jdk/lib/tools.jar'
       ENV['JAVA_HOME'] = File.expand_path('jdk/jre')
     end
-  
+
     it 'should return the path to tools.jar' do
       Java.tools_jar.should point_to_path('jdk/lib/tools.jar')
     end
@@ -86,7 +86,7 @@ describe 'Java.tools_jar' do
       Java.instance_eval { @tools_jar = nil }
       ENV['JAVA_HOME'] = File.expand_path('jdk')
     end
-  
+
     it 'should return nil' do
       Java.tools_jar.should be_nil
     end

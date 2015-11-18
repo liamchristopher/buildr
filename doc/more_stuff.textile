@@ -205,9 +205,9 @@ The purpose of the buildfile is to define your projects, and the various tasks a
 
 There are several mechanisms for developing extensions and build features across projects which we cover in more details in the section "Extending Buildr":extending.html.  Here we will talk about using extensions that are distributed in the form of RubyGems.
 
-"RubyGems":http://rubygems.rubyforge.org provides the @gem@ command line tool that you can use to search, install, upgrade, package and distribute gems. It installs all gems into a local repository that is shared across your builds and all other Ruby applications you may have running.  You can install a gem from a local file, or download and install it from any number of remote repositories.
+"RubyGems":http://rubygems.org provides the @gem@ command line tool that you can use to search, install, upgrade, package and distribute gems. It installs all gems into a local repository that is shared across your builds and all other Ruby applications you may have running.  You can install a gem from a local file, or download and install it from any number of remote repositories.
 
-RubyGems is preconfigured to use the "RubyForge":http://rubyforge.org repository.  You'll find a large number of open source Ruby libraries there, including Buildr itself and all its dependencies.  RubyForge provides a free account that you can use to host your projects and distribute your gems (you can use RubyForge strictly for distribution, as we do with Buildr).
+RubyGems is preconfigured to use the "RubyForge":http://rubygems.org repository.  You'll find a large number of open source Ruby libraries there, including Buildr itself and all its dependencies.
 
 You can also set up your own private repository and use it instead or in addition to RubyForge.  Use the @gem sources@ command to add repositories, and the @gem server@ command to run a remote repository.  You can see all available options by running @gem help@.
 
@@ -391,6 +391,78 @@ $ buildr --generate /path/to/my_project
 
 This creates a basic buildfile with a main project called 'my_project'. The buildfile contains a skeleton for compiling the Eclipse projects. If you want to automate dependency tracking via OSGi have a look at the "buildr4osgi":http://oss.intalio.com/buildr4osgi/ project. Support for building Eclipse RCP applications, running PDE tests and P2-sites is currently lacking in Buildr.
 
+h2(#maven_central). Releasing to Maven Central
+
+Many opensource projects release their artifacts to Maven Central. To release a library to Maven Central, the project needs to provide several elements for each library;
+
+* the jar artifact,
+* the sources artifact,
+* the javadocs artifact,
+* a pom that supplies fields required by Maven Central, and
+* gpg signatures for every file supplied.
+
+Buildr has built-in support for the artifacts and can easily sign the artifacts using the 'buildr/gpg' addon. However it has not always been easy to generate a pom in the required format until the 'buildr/custom_pom' became available.
+
+Below is an extremely verbose example of a project that provides all the elements required to publish to Maven Central.
+
+{% highlight sh %}
+# Include addon to generate GPG Signatures
+require 'buildr/gpg'
+# Include addon to generate custom pom
+require 'buildr/custom_pom'
+
+define 'myproject' do
+  project.group = 'org.myproject'
+  project.version = '1.0'
+
+  pom.licenses['The Apache Software License, Version 2.0'] = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+  pom.scm_connection = pom.scm_developer_connection = 'scm:git:git@github.com:jbloggs/myproject'
+  pom.scm_url = 'git@github.com:jbloggs/myproject'
+  pom.url = 'https://github.com/jbloggs/myproject'
+  pom.issues_url = 'https://github.com/jbloggs/myproject/issues'
+  pom.issues_system = 'GitHub Issues'
+  pom.add_developer('jbloggs', 'Joe Bloggs', 'jbloggs@example.com', ['Project Lead'])
+  pom.provided_dependencies.concat [:javax_servlet]
+  pom.optional_dependencies.concat [:optional_api]
+
+  compile.with :javax_servlet, :some_api, :optional_api
+
+  test.with :mockito
+
+  package(:jar)
+  package(:sources)
+  package(:javadoc)
+end
+{% endhighlight %}
+
+That example is however, extremely verbose and there is a number of helper methods been added to the 'buildr/custom_pom' addon to simplify common scenarios. It would be more common to see the addon used in the following manner;
+
+{% highlight sh %}
+require 'buildr/gpg'
+require 'buildr/custom_pom'
+
+define 'myproject' do
+  project.group = 'org.myproject'
+  project.version = '1.0'
+
+  pom.add_apache2_license
+  pom.add_github_project('jbloggs/myproject')
+  pom.add_developer('jbloggs', 'Joe Bloggs')
+  pom.provided_dependencies.concat [:javax_servlet]
+  pom.optional_dependencies.concat [:optional_api]
+
+  compile.with :javax_servlet, :optional_api
+
+  test.with :mockito
+
+  package(:jar)
+  package(:sources)
+  package(:javadoc)
+end
+{% endhighlight %}
+
+If there are other common scenarios useful for opensource developers, feel free to make a request on buildr mailing list to provide simplified helper methods.
+
 h2(#idea). IntelliJ IDEA
 
 If you use IntelliJ IDEA, you can generate project files by issuing:
@@ -454,6 +526,24 @@ Will generate:
 foo-suffix1.ipr
 foo-suffix2.iml
 bar/bar-suffix2.iml
+</pre>
+
+h5. Example: Setting prefix
+
+{% highlight ruby %}
+define "foo" do
+  ipr.prefix = "prefix1-"
+  iml.prefix = "prefix2-"
+  define "bar"
+end
+{% endhighlight %}
+
+Will generate:
+
+<pre>
+prefix1-foo.ipr
+prefix2-foo.iml
+bar/prefix2-bar.iml
 </pre>
 
 h4. Disabling project file generation
@@ -812,7 +902,7 @@ $ buildr -rbuildr/java/cobertura cobertura:html
 
 h2(#checkstyle). Checkstyle
 
-Checkstyle is integrated into Buildr through an extension. The extension adds the "checkstyle:xml" task that generates an xml report listing checkstyle violations and may add a "checkstyle:html" task if an appropriate xsl is present. A typical project that uses the extension may look something like;
+Checkstyle is integrated into Buildr through an extension. The extension adds the "checkstyle:xml" task that generates an xml report listing checkstyle violations and a "checkstyle:html" task to generate the html variant. A typical project that uses the extension may look something like;
 
 {% highlight ruby %}
 require 'buildr/checkstyle'
@@ -833,7 +923,7 @@ By default checkstyle will look for all configuration files in the src/main/etc/
 
 The extension will include the source and test directories of the project aswell as the compile and test dependencies when invoking the checkstyle tool. These can be added to by the parameters "checkstyle.source_paths" and "checkstyle.extra_dependencies" as appropriate.
 
-If the xsl file named "checkstyle-report.xsl" is present in the configuration directory then a "checkstyle:html" task will be defined. The name of the xsl file can be overridden by the parameter "checkstyle.style_file".
+If the xsl file named "checkstyle-report.xsl" is present in the configuration directory then it will be used to generate the html report, otherwise a xsl file that comes with buildr will be used. The name of the xsl file can be overridden by the parameter "checkstyle.style_file".
 
 h2(#findbugs). FindBugs
 
@@ -987,6 +1077,59 @@ The method compile_jaxb accepts either an array of files or a single file as the
 * <tt>:keep_content</tt>: By default the generated directory will be deleted. If <tt>true</tt> is specified for this parameter the directory will not be deleted.
 * <tt>:package</tt>: The package in which the source is generated.
 
+h2(#css_lint). CssLint
+
+"CssLint":https://github.com/CSSLint/csslint is integrated into Buildr through an extension. The extension adds the "css_lint:xml" task to generate an xml report listing css lint violations and a "css_lint:html" task for a html variant of the same data. It is expected that a project that makes use of css linting will have installed the csslint using node. A typical project that uses the extension may look something like;
+
+{% highlight ruby %}
+require 'buildr/css_lint'
+
+define "foo" do
+  project.version = "1.0.0"
+
+  define "bar" do ... end
+
+  css_lint.source_paths.concat([some_generated_dir])
+  css_lint.ignore.concat(%w(box-sizing font-sizes adjoining-classes))
+end
+{% endhighlight %}
+
+By default css_lint will look for the xsl file in the src/main/etc/css_lint directory but this can be overriden by the setting the "css_lint.config_directory" parameter. The "css_lint:xml" task will be defined if the source_paths is not empty. The rules can be passed to the task using the 'ignores', 'errors' and 'warnings' parameters.
+
+The extension will lint the css files in the "_(:source, :main, :webapp, :css)" directory by default. The set of source directories linted can be controlled by the "css_lint.source_paths" parameter.
+
+If the xsl file named "css_lint-report.xsl" is present in the configuration directory then that will be used in the "css_lint:html" task otherwise a default xsl included with buildr will be used. The name of the xsl file can be overridden by the parameter "css_lint.style_file".
+
+h2(#scss_lint). ScssLint
+
+"ScssLint":https://github.com/causes/scss-lint is integrated into Buildr through an extension. The extension adds the "scss_lint:xml" task to generate an xml report listing scss lint violations and a "scss_lint:html" task for a html variant of the same data. A buildr project that makes uses of the extension is expected to have added 'scss_lint' gem to the projects Gemfile by adding a line such as;
+
+{% highlight ruby %}
+gem 'scss-lint', '= 0.24.0'
+{% endhighlight %}
+
+A typical project that uses the extension may look something like;
+
+{% highlight ruby %}
+require 'buildr/scss_lint'
+
+define "foo" do
+  project.version = "1.0.0"
+
+  define "bar" do ... end
+
+  scss_lint.configuration_file = _('etc/scss_lint/checks.yml')
+  scss_lint.source_paths << project('web')._(:source, :main, :webapp, 'sass')
+  scss_lint.file_excludes = FileList["#{project('web')._(:source, :main, :webapp, 'sass')}/vendor/**/*"]
+end
+{% endhighlight %}
+
+By default scss_lint will look for all configuration files in the src/main/etc/scss_lint directory but this can be overriden by the setting the "scss_lint.config_directory" parameter. The "scss_lint:xml" task will be defined if the scss_lint rules file is found. The rules file is named "checks.yml" by default but can be overridden by setting the "scss_lint.configuration_file" parameter.
+
+The extension will lint the sass files in the "_(:source, :main, :webapp, :sass)" directory by default. The set of source directories linted can be controlled by the "scss_lint.source_paths" parameter.
+
+If the xsl file named "scss_lint-report.xsl" is present in the configuration directory then that will be used in the "scss_lint:html" task otherwise a default xsl included with buildr will be used. The name of the xsl file can be overridden by the parameter "scss_lint.style_file".
+
 h2(#anything_ruby). Anything Ruby Can Do
 
 Buildr is Ruby code.  That's an implementation detail for some, but a useful features for others.  You can use Ruby to keep your build scripts simple and DRY, tackle ad hoc tasks and write reusable features without the complexity of "plugins".
@@ -1041,4 +1184,3 @@ puts "There are #{source.size} source files"
 lines = sources.inject(0) { |lines, src| lines += File.readlines(src).size }
 puts "That contain #{lines} lines"
 {% endhighlight %}
-

@@ -3,11 +3,14 @@ jdk:
   - oraclejdk7
   - openjdk6
 rvm:
+  - 2.1.0
   - 2.0.0
-  - "1.9.3"
-  - "1.8.7"
+  - 1.9.3
+  - 1.8.7
   - jruby-19mode
   - jruby-18mode
+git:
+  depth: 10
 scala:
 #  - 2.10.0
   - 2.9.2
@@ -22,5 +25,9 @@ notifications:
   email:
     recipients:
       - commits@buildr.apache.org
+      - donaldp@apache.org
+      - peter@realityforge.org
+    on_success: always
+    on_failure: always
 notifications:
   irc: "irc.freenode.org#buildr"

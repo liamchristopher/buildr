@@ -29,7 +29,7 @@ module RSpec
         @response = response
         doc = response.is_a?(REXML::Document) ? response : REXML::Document.new(@response)
         match = REXML::XPath.match(doc, @xpath)
-        not match.empty?
+        !match.empty?
       end
 
       def failure_message
@@ -61,7 +61,7 @@ module RSpec
       def matches?(response)
         @response = response
         doc = response.is_a?(REXML::Document) ? response : REXML::Document.new(@response)
-        ok = true
+        ok = false
         REXML::XPath.each(doc, @xpath) do |e|
           @actual_val = case e
           when REXML::Attribute
@@ -71,6 +71,7 @@ module RSpec
           else
             e.to_s
           end
+          ok = true
           return false unless @val == @actual_val
         end
         return ok

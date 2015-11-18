@@ -13,7 +13,7 @@ Buildr needs Ruby 1.8 or later and RubyGems 0.9 or later.
 Windows users can get the one-click Ruby installer, which includes the latest
 version of Ruby and RubyGems:
 
-http://rubyinstaller.rubyforge.org
+http://rubyinstaller.org
 
 Make sure to set JAVA_HOME environment variable first, then:
 
@@ -53,7 +53,7 @@ dependencies are installed when you run:
 Windows users can get the one-click Ruby installer, which includes the latest
 version of Ruby and RubyGems:
 
-http://rubyinstaller.rubyforge.org
+http://rubyinstaller.org
 
 Before installing Buildr, please set the JAVA_HOME environment variable to
 point to your JDK distribution.  Next, use Ruby Gem to install Buildr:
@@ -94,16 +94,13 @@ When prompted for a platform, select ruby.
 
 == Living On the Edge
 
-You can check the latest sources from SVN:
+You can check the latest sources from GIT:
 
-  svn co http://svn.apache.org/repos/asf/buildr/trunk
+  git clone http://git.apache.org/buildr.git
 
-Or browse the SVN repository online:
-http://svn.apache.org/repos/asf/buildr
+If you prefer GitHub, a mirror is available from http://github.com/apache/buildr:
 
-If you prefer Git, a Git fork is available from http://github.com/buildr/buildr/tree/master:
-
-  git clone git://github.com/buildr/buildr.git
+  git clone git://github.com/apache/buildr.git
 
 To install Buildr locally from source:
 
@@ -116,7 +113,6 @@ If the cutting edge doesn't work, make sure to check the CHANGELOG, to see
 which changes might have broken your build.  To run all the test cases:
 
   rake spec
-
 
 == License
 

@@ -22,48 +22,41 @@ module Buildr
 
       # The specs for requirements
       def dependencies
-        [
-            'com.google.code.findbugs:findbugs-ant:jar:1.3.9',
-            'com.google.code.findbugs:findbugs:jar:1.3.9',
-            'com.google.code.findbugs:bcel:jar:1.3.9',
-            'com.google.code.findbugs:jsr305:jar:1.3.9',
-            'com.google.code.findbugs:jFormatString:jar:1.3.9',
-            'com.google.code.findbugs:annotations:jar:1.3.9',
-            'dom4j:dom4j:jar:1.6.1',
-            'jaxen:jaxen:jar:1.1.1',
-            'jdom:jdom:jar:1.0',
-            'xom:xom:jar:1.0',
-            'com.ibm.icu:icu4j:jar:2.6.1',
-            'asm:asm:jar:3.1',
-            'asm:asm-analysis:jar:3.1',
-            'asm:asm-tree:jar:3.1',
-            'asm:asm-commons:jar:3.1',
-            'asm:asm-util:jar:3.1',
-            'asm:asm-xml:jar:3.1',
-            'commons-lang:commons-lang:jar:2.4'
-        ]
+        %w(
+          com.google.code.findbugs:findbugs:jar:3.0.0
+          com.google.code.findbugs:jFormatString:jar:3.0.0
+          com.google.code.findbugs:bcel-findbugs:jar:6.0
+          com.google.code.findbugs:annotations:jar:3.0.0
+          org.ow2.asm:asm-debug-all:jar:5.0.2
+          commons-lang:commons-lang:jar:2.6
+          dom4j:dom4j:jar:1.6.1
+          jaxen:jaxen:jar:1.1.6
+        )
       end
 
-      def findbugs(output_file, source_paths, analyze_paths, options = { })
+      def findbugs(output_file, source_paths, analyze_paths, options = {})
         dependencies = (options[:dependencies] || []) + self.dependencies
         cp = Buildr.artifacts(dependencies).each { |a| a.invoke() if a.respond_to?(:invoke) }.map(&:to_s).join(File::PATH_SEPARATOR)
 
         args = {
-            :output => "xml:withMessages",
-            :outputFile => output_file,
-            :effort => 'max',
-            :pluginList => '',
-            :classpath => cp,
-            :timeout => "90000000",
-            :debug => "false"
+          :output => options[:output] || 'xml',
+          :outputFile => output_file,
+          :effort => 'max',
+          :pluginList => '',
+          :classpath => cp,
+          :reportLevel => options[:report_level] || 'medium',
+          :timeout => '90000000',
+          :debug => 'false'
         }
         args[:failOnError] = true if options[:fail_on_error]
         args[:excludeFilter] = options[:exclude_filter] if options[:exclude_filter]
         args[:jvmargs] = options[:java_args] if options[:java_args]
 
+        mkdir_p File.dirname(output_file)
+
         Buildr.ant('findBugs') do |ant|
-          ant.taskdef :name =>'findBugs',
-                      :classname =>'edu.umd.cs.findbugs.anttask.FindBugsTask',
+          ant.taskdef :name => 'findBugs',
+                      :classname => 'edu.umd.cs.findbugs.anttask.FindBugsTask',
                       :classpath => cp
           ant.findBugs args do
             source_paths.each do |source_path|
@@ -97,14 +90,16 @@ module Buildr
         !!@enabled
       end
 
-      def html_enabled?
-        File.exist?(self.style_file)
-      end
-
       attr_writer :config_directory
 
       def config_directory
         @config_directory || project._(:source, :main, :etc, :findbugs)
+      end
+
+      attr_writer :report_level
+
+      def report_level
+        @report_level || 'medium'
       end
 
       attr_writer :report_dir
@@ -131,12 +126,6 @@ module Buildr
         @html_output_file || "#{self.report_dir}/findbugs.html"
       end
 
-      attr_writer :style_file
-
-      def style_file
-        @style_file || "#{self.config_directory}/findbugs-report.xsl"
-      end
-
       attr_writer :filter_file
 
       def filter_file
@@ -144,17 +133,17 @@ module Buildr
       end
 
       def properties
-        @properties ||= { }
+        @properties ||= {}
       end
 
       attr_writer :java_args
 
       def java_args
-        @java_args || "-server -Xss1m -Xmx800m -Duser.language=en -Duser.region=EN "
+        @java_args || '-server -Xss1m -Xmx800m -Duser.language=en -Duser.region=EN '
       end
 
       def source_paths
-        @source_paths ||= [self.project.compile.sources, self.project.test.compile.sources]
+        @source_paths ||= [self.project.compile.sources, self.project.test.compile.sources].flatten.compact
       end
 
       def analyze_paths
@@ -162,7 +151,7 @@ module Buildr
       end
 
       def extra_dependencies
-        @extra_dependencies ||= [self.project.compile.dependencies, self.project.test.compile.dependencies]
+        @extra_dependencies ||= [self.project.compile.dependencies, self.project.test.compile.dependencies].flatten.compact
       end
 
       protected
@@ -172,7 +161,6 @@ module Buildr
       end
 
       attr_reader :project
-
     end
 
     module ProjectExtension
@@ -184,11 +172,9 @@ module Buildr
 
       after_define do |project|
         if project.findbugs.enabled?
-          desc "Generate findbugs xml report."
-          project.task("findbugs:xml") do
-            puts "Findbugs: Analyzing source code..."
-            mkdir_p File.dirname(project.findbugs.xml_output_file)
-
+          desc 'Generate findbugs xml report.'
+          project.task('findbugs:xml') do
+            puts 'Findbugs: Analyzing source code...'
             options =
               {
                 :properties => project.findbugs.properties,
@@ -196,6 +182,8 @@ module Buildr
                 :extra_dependencies => project.findbugs.extra_dependencies
               }
             options[:exclude_filter] = project.findbugs.filter_file if File.exist?(project.findbugs.filter_file)
+            options[:output] = 'xml:withMessages'
+            options[:report_level] = project.findbugs.report_level
 
             Buildr::Findbugs.findbugs(project.findbugs.xml_output_file,
                                       project.findbugs.source_paths.flatten.compact,
@@ -203,18 +191,23 @@ module Buildr
                                       options)
           end
 
-          if project.findbugs.html_enabled?
-            xml_task = project.task("findbugs:xml")
-            desc "Generate findbugs html report."
-            project.task("findbugs:html" => xml_task) do
-              puts "Findbugs: Generating report"
-              mkdir_p File.dirname(project.findbugs.html_output_file)
-              Buildr.ant "findbugs" do |ant|
-                ant.style :in => project.findbugs.xml_output_file,
-                          :out => project.findbugs.html_output_file,
-                          :style => project.findbugs.style_file
-              end
-            end
+          desc 'Generate findbugs html report.'
+          project.task('findbugs:html') do
+            puts 'Findbugs: Analyzing source code...'
+            options =
+              {
+                :properties => project.findbugs.properties,
+                :fail_on_error => project.findbugs.fail_on_error?,
+                :extra_dependencies => project.findbugs.extra_dependencies
+              }
+            options[:exclude_filter] = project.findbugs.filter_file if File.exist?(project.findbugs.filter_file)
+            options[:output] = 'html'
+            options[:report_level] = project.findbugs.report_level
+
+            Buildr::Findbugs.findbugs(project.findbugs.html_output_file,
+                                      project.findbugs.source_paths.flatten.compact,
+                                      project.findbugs.analyze_paths.flatten.compact,
+                                      options)
           end
         end
       end

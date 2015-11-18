@@ -13,13 +13,12 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-require 'rubyforge'
 require 'digest/md5'
 require 'digest/sha1'
 
 gpg_cmd = 'gpg2'
 
-STAGE_DATE = Time.now.strftime('%Y-%m-%d')
+STAGE_DATE = ENV['STAGE_DATE'] ||  Time.now.strftime('%Y-%m-%d')
 
 task 'prepare' do |task, args|
   gpg_arg = args.gpg || ENV['gpg']
@@ -42,12 +41,10 @@ task 'prepare' do |task, args|
   # Make sure we're doing a release from checked code.
   lambda do
     puts 'Checking there are no local changes ... '
-    svn = `svn status`
-    fail "Cannot release unless all local changes are in SVN:\n#{svn}" unless svn.empty?
     git = `git status -s`
-    fail "Cannot release unless all local changes are in Git:\n#{git}" if git[/^ M/] && ENV["IGNORE_GIT"].nil?
+    fail "Cannot release unless all local changes are in Git:\n#{git}" unless git.empty?
     puts '[X] There are no local changes, everything is in source control'
-  end.call if false
+  end.call
 
   # Make sure we have a valid CHANGELOG entry for this release.
   lambda do
@@ -79,20 +76,13 @@ task 'prepare' do |task, args|
   end.call
 
   task('license').invoke
+  task('addon_extensions:check').invoke
 
   # Need Prince to generate PDF
   lambda do
     puts 'Checking that we have prince available ... '
     sh 'prince --version'
     puts '[X] We have prince available'
-  end.call
-
-  # Need RubyForge to upload new release files.
-  lambda do
-    puts "[!] Make sure you have admin privileges to make a release on RubyForge"
-    rubyforge = RubyForge.new.configure
-    rubyforge.login
-    rubyforge.scrape_project(spec.name)
   end.call
 
   raise "Can not run stage process under jruby" if RUBY_PLATFORM[/java/]
@@ -107,7 +97,7 @@ task 'stage' => %w(clobber prepare) do |task, args|
     puts 'Ensuring all files have appropriate group and other permissions...'
     sh 'find . -type f | xargs chmod go+r'
     sh 'find . -type d | xargs chmod go+rx'
-    puts '[X] File permissions updated/validted.'
+    puts '[X] File permissions updated/validated.'
   end.call
 
   # Start by figuring out what has changed.

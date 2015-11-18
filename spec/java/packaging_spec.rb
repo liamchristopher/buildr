@@ -550,8 +550,7 @@ describe Packaging, 'war' do
     inspect_war { |files| files.should include('test.html') }
   end
 
-  it 'should accept files from :classes option' do
-    write 'src/main/java/Test.java', 'class Test {}'
+  it 'should accept files from :classes option', :retry => (Buildr::Util.win_os? ? 4 : 1) do
     write 'classes/test'
     define('foo', :version=>'1.0') { package(:war).with(:classes=>'classes') }
     inspect_war { |files| files.should include('WEB-INF/classes/test') }
@@ -1228,11 +1227,11 @@ describe Packaging, 'test_jar' do
   it_should_behave_like 'packaging'
   before { @packaging, @package_type = :test_jar, :jar }
 
-  it 'should create package of type :jar and classifier \'test-jar\'' do
+  it 'should create package of type :jar and classifier \'tests\'' do
     define 'foo', :version=>'1.0' do
       package(:test_jar).type.should eql(:jar)
-      package(:test_jar).classifier.should eql('test-jar')
-      package(:test_jar).name.should match(/foo-1.0-test-jar.jar$/)
+      package(:test_jar).classifier.should eql('tests')
+      package(:test_jar).name.should match(/foo-1.0-tests.jar$/)
     end
   end
 

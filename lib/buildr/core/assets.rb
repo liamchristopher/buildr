@@ -31,7 +31,7 @@ module Buildr #:nodoc:
       def paths
         unless @paths
           @paths = []
-          @paths << project._(:source, :main, :webapp) if File.exist?(project._(:source, :main, :webapp))
+          @paths << project._(:source, :main, :assets) if File.exist?(project._(:source, :main, :assets))
         end
         @paths
       end
@@ -72,20 +72,20 @@ module Buildr #:nodoc:
         Project.local_task("assets")
       end
 
+      before_define do |project|
+        # Force the construction of the assets task
+        project.assets.paths
+      end
+
       # Access the asset task
       def assets
         if @assets.nil?
-          @assets = AssetsTask.define_task(project._(:target, :main, :webapp) => [])
+          @assets = AssetsTask.define_task(project._(:target, :main, :assets) => [])
           @assets.project = self
           project.task('assets').enhance([@assets])
           project.build.enhance([@assets])
         end
         @assets
-      end
-
-      after_define do |project|
-        # Force construction
-        project.assets
       end
     end
   end

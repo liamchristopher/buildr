@@ -21,10 +21,12 @@ module Buildr #:nodoc:
 
     # Abstract base class for IdeaModule and IdeaProject
     class IdeaFile
-      DEFAULT_SUFFIX = ""
-      DEFAULT_LOCAL_REPOSITORY_ENV_OVERRIDE = "MAVEN_REPOSITORY"
+      DEFAULT_PREFIX = ''
+      DEFAULT_SUFFIX = ''
+      DEFAULT_LOCAL_REPOSITORY_ENV_OVERRIDE = 'MAVEN_REPOSITORY'
 
       attr_reader :buildr_project
+      attr_writer :prefix
       attr_writer :suffix
       attr_writer :id
       attr_accessor :template
@@ -32,6 +34,10 @@ module Buildr #:nodoc:
 
       def initialize
         @local_repository_env_override = DEFAULT_LOCAL_REPOSITORY_ENV_OVERRIDE
+      end
+
+      def prefix
+        @prefix ||= DEFAULT_PREFIX
       end
 
       def suffix
@@ -50,17 +56,32 @@ module Buildr #:nodoc:
         self.components << create_component(name, attrs, &xml)
       end
 
+      def add_component_from_file(filename)
+        self.components << lambda do
+          raise "Unable to locate file #{filename} adding component to idea file" unless File.exist?(filename)
+          Buildr::IntellijIdea.new_document(IO.read(filename)).root
+        end
+      end
+
+      def add_component_from_artifact(artifact)
+        self.components << lambda do
+          a = Buildr.artifact(artifact)
+          a.invoke
+          Buildr::IntellijIdea.new_document(IO.read(a.to_s)).root
+        end
+      end
+
       # IDEA can not handle text content with indents so need to removing indenting
       # Can not pass true as third argument as the ruby library seems broken
       def write(f)
         document.write(f, -1, false, true)
       end
 
-      protected
-
       def name
-        "#{self.id}#{suffix}"
+        "#{prefix}#{self.id}#{suffix}"
       end
+
+      protected
 
       def relative(path)
         ::Buildr::Util.relative_path(File.expand_path(path.to_s), self.base_directory)
@@ -131,7 +152,7 @@ module Buildr #:nodoc:
         end
         if self.template
           template_doc = load_document(self.template)
-          REXML::XPath.each(template_doc, "//component") do |element|
+          REXML::XPath.each(template_doc, '//component') do |element|
             inject_component(doc, element)
           end
         end
@@ -164,7 +185,7 @@ module Buildr #:nodoc:
 
     # IdeaModule represents an .iml file
     class IdeaModule < IdeaFile
-      DEFAULT_TYPE = "JAVA_MODULE"
+      DEFAULT_TYPE = 'JAVA_MODULE'
 
       attr_accessor :type
       attr_accessor :group
@@ -184,25 +205,43 @@ module Buildr #:nodoc:
       end
 
       def jdk_version
-        @jdk_version || buildr_project.compile.options.source || "1.6"
+        @jdk_version || buildr_project.compile.options.source || '1.7'
       end
 
       def extension
-        "iml"
+        'iml'
       end
 
       def main_source_directories
-        @main_source_directories ||= [
-          buildr_project.compile.sources,
-          buildr_project.resources.sources
-        ].flatten.compact
+        @main_source_directories ||= [buildr_project.compile.sources].flatten.compact
+      end
+
+      def main_resource_directories
+        @main_resource_directories ||= [buildr_project.resources.sources].flatten.compact
+      end
+
+      def main_generated_source_directories
+        @main_generated_source_directories ||= []
+      end
+
+      def main_generated_resource_directories
+        @main_generated_resource_directories ||= []
       end
 
       def test_source_directories
-        @test_source_directories ||= [
-          buildr_project.test.compile.sources,
-          buildr_project.test.resources.sources
-        ].flatten.compact
+        @test_source_directories ||= [buildr_project.test.compile.sources].flatten.compact
+      end
+
+      def test_resource_directories
+        @test_resource_directories ||= [buildr_project.test.resources.sources].flatten.compact
+      end
+
+      def test_generated_source_directories
+        @test_generated_source_directories ||= []
+      end
+
+      def test_generated_resource_directories
+        @test_generated_resource_directories ||= []
       end
 
       def excluded_directories
@@ -228,11 +267,11 @@ module Buildr #:nodoc:
       end
 
       def main_dependencies
-        @main_dependencies ||=  buildr_project.compile.dependencies
+        @main_dependencies ||= buildr_project.compile.dependencies.dup
       end
 
       def test_dependencies
-        @test_dependencies ||=  buildr_project.test.compile.dependencies
+        @test_dependencies ||= buildr_project.test.compile.dependencies.dup
       end
 
       def add_facet(name, type)
@@ -252,7 +291,7 @@ module Buildr #:nodoc:
       end
 
       def add_gwt_facet(modules = {}, options = {})
-        name = options[:name] || "GWT"
+        name = options[:name] || 'GWT'
         detected_gwt_version = nil
         if options[:gwt_dev_artifact]
           a = Buildr.artifact(options[:gwt_dev_artifact])
@@ -262,10 +301,10 @@ module Buildr #:nodoc:
 
         settings =
           {
-            :webFacet => "Web",
-            :compilerMaxHeapSize => "512",
-            :compilerParameters => "-draftCompile -localWorkers 2 -strict",
-            :gwtScriptOutputStyle => "PRETTY"
+            :webFacet => 'Web',
+            :compilerMaxHeapSize => '512',
+            :compilerParameters => '-draftCompile -localWorkers 2 -strict',
+            :gwtScriptOutputStyle => 'PRETTY'
           }.merge(options[:settings] || {})
 
         buildr_project.compile.dependencies.each do |d|
@@ -277,12 +316,12 @@ module Buildr #:nodoc:
 
         if detected_gwt_version
           settings[:gwtSdkUrl] = resolve_path(File.dirname(detected_gwt_version))
-          settings[:gwtSdkType] = "maven"
+          settings[:gwtSdkType] = 'maven'
         else
-          settings[:gwtSdkUrl] = "file://$GWT_TOOLS$"
+          settings[:gwtSdkUrl] = 'file://$GWT_TOOLS$'
         end
 
-        add_facet(name, "gwt") do |f|
+        add_facet(name, 'gwt') do |f|
           f.configuration do |c|
             settings.each_pair do |k, v|
               c.setting :name => k.to_s, :value => v.to_s
@@ -297,9 +336,10 @@ module Buildr #:nodoc:
       end
 
       def add_web_facet(options = {})
-        name = options[:name] || "Web"
+        name = options[:name] || 'Web'
         default_webroots = {}
-        buildr_project.assets.paths.each {|p| default_webroots[p] = "/" }
+        default_webroots[buildr_project._(:source, :main, :webapp)] = '/' if File.exist?(buildr_project._(:source, :main, :webapp))
+        buildr_project.assets.paths.each {|p| default_webroots[p] = '/' }
         webroots = options[:webroots] || default_webroots
         default_deployment_descriptors = []
         ['web.xml', 'sun-web.xml', 'glassfish-web.xml', 'jetty-web.xml', 'geronimo-web.xml',
@@ -308,14 +348,14 @@ module Buildr #:nodoc:
          'ibm-web-bnd.xml', 'ibm-web-ext.xml', 'ibm-web-ext-pme.xml'].
           each do |descriptor|
           webroots.each_pair do |path, relative_url|
-            next unless relative_url == "/"
+            next unless relative_url == '/'
             d = "#{path}/WEB-INF/#{descriptor}"
             default_deployment_descriptors << d if File.exist?(d)
           end
         end
         deployment_descriptors = options[:deployment_descriptors] || default_deployment_descriptors
 
-        add_facet(name, "web") do |f|
+        add_facet(name, 'web') do |f|
           f.configuration do |c|
             c.descriptors do |d|
               deployment_descriptors.each do |deployment_descriptor|
@@ -338,22 +378,22 @@ module Buildr #:nodoc:
       end
 
       def add_jruby_facet(options = {})
-        name = options[:name] || "JRuby"
+        name = options[:name] || 'JRuby'
 
         ruby_version_file = buildr_project._('.ruby-version')
         default_jruby_version = File.exist?(ruby_version_file) ? "rbenv: #{IO.read(ruby_version_file).strip}" : 'jruby-1.6.7.2'
         jruby_version = options[:jruby_version] || default_jruby_version
-        add_facet(name, "JRUBY") do |f|
+        add_facet(name, 'JRUBY') do |f|
           f.configuration do |c|
-            c.JRUBY_FACET_CONFIG_ID :NAME => "JRUBY_SDK_NAME", :VALUE => jruby_version
-            c.LOAD_PATH :number => "0"
-            c.I18N_FOLDERS :number => "0"
+            c.JRUBY_FACET_CONFIG_ID :NAME => 'JRUBY_SDK_NAME', :VALUE => jruby_version
+            c.LOAD_PATH :number => '0'
+            c.I18N_FOLDERS :number => '0'
           end
         end
       end
 
       def add_jpa_facet(options = {})
-        name = options[:name] || "JPA"
+        name = options[:name] || 'JPA'
 
         source_roots = [buildr_project.iml.main_source_directories, buildr_project.compile.sources, buildr_project.resources.sources].flatten.compact
         default_deployment_descriptors = []
@@ -383,11 +423,11 @@ module Buildr #:nodoc:
           end
         end
 
-        add_facet(name, "jpa") do |f|
+        add_facet(name, 'jpa') do |f|
           f.configuration do |c|
             if provider
-              c.setting :name => "validation-enabled", :value => validation_enabled
-              c.setting :name => "provider-name", :value => provider
+              c.setting :name => 'validation-enabled', :value => validation_enabled
+              c.setting :name => 'provider-name', :value => provider
             end
             c.tag!('datasource-mapping') do |ds|
               ds.tag!('factory-entry', :name => factory_entry)
@@ -400,7 +440,7 @@ module Buildr #:nodoc:
       end
 
       def add_ejb_facet(options = {})
-        name = options[:name] || "EJB"
+        name = options[:name] || 'EJB'
 
         default_ejb_roots = [buildr_project.iml.main_source_directories, buildr_project.compile.sources, buildr_project.resources.sources].flatten.compact
         ejb_roots = options[:ejb_roots] || default_ejb_roots
@@ -413,11 +453,13 @@ module Buildr #:nodoc:
           ejb_roots.each do |path|
             d = "#{path}/WEB-INF/#{descriptor}"
             default_deployment_descriptors << d if File.exist?(d)
+            d = "#{path}/META-INF/#{descriptor}"
+            default_deployment_descriptors << d if File.exist?(d)
           end
         end
         deployment_descriptors = options[:deployment_descriptors] || default_deployment_descriptors
 
-        add_facet(name, "ejb") do |facet|
+        add_facet(name, 'ejb') do |facet|
           facet.configuration do |c|
             c.descriptors do |d|
               deployment_descriptors.each do |deployment_descriptor|
@@ -443,6 +485,21 @@ module Buildr #:nodoc:
         p
       end
 
+      def main_dependency_details
+        target_dir = buildr_project.compile.target.to_s
+        main_dependencies.select { |d| d.to_s != target_dir }.collect do |d|
+          dependency_path = d.to_s
+          export = true
+          source_path = nil
+          if d.respond_to?(:to_spec_hash)
+            source_spec = d.to_spec_hash.merge(:classifier => 'sources')
+            source_path = Buildr.artifact(source_spec).to_s
+            source_path = nil unless File.exist?(source_path)
+          end
+          [dependency_path, export, source_path]
+        end
+      end
+
       def test_dependency_details
         main_dependencies_paths = main_dependencies.map(&:to_s)
         target_dir = buildr_project.compile.target.to_s
@@ -461,7 +518,7 @@ module Buildr #:nodoc:
 
       def base_document
         target = StringIO.new
-        Builder::XmlMarkup.new(:target => target).module(:version => "4", :relativePaths => "true", :type => self.type)
+        Builder::XmlMarkup.new(:target => target).module(:version => '4', :relativePaths => 'true', :type => self.type)
         Buildr::IntellijIdea.new_document(target.string)
       end
 
@@ -477,18 +534,18 @@ module Buildr #:nodoc:
       end
 
       def facet_component
-        create_composite_component("FacetManager", {}, self.facets)
+        create_composite_component('FacetManager', {}, self.facets)
       end
 
       def module_root_component
-        create_component("NewModuleRootManager", "inherit-compiler-output" => "false") do |xml|
+        create_component('NewModuleRootManager', 'inherit-compiler-output' => 'false') do |xml|
           generate_compile_output(xml)
           generate_content(xml) unless skip_content?
           generate_initial_order_entries(xml)
           project_dependencies = []
 
 
-          self.test_dependency_details.each do |dependency_path, export, source_path|
+          self.main_dependency_details.each do |dependency_path, export, source_path|
             next unless export
             generate_lib(xml, dependency_path, export, source_path, project_dependencies)
           end
@@ -532,24 +589,36 @@ module Buildr #:nodoc:
       end
 
       def resolve_path(path)
-        resolve_path_from_base(path, "$MODULE_DIR$")
+        resolve_path_from_base(path, '$MODULE_DIR$')
       end
 
       def generate_compile_output(xml)
         xml.output(:url => file_path(self.main_output_dir.to_s))
-        xml.tag!("output-test", :url => file_path(self.test_output_dir.to_s))
-        xml.tag!("exclude-output")
+        xml.tag!('output-test', :url => file_path(self.test_output_dir.to_s))
+        xml.tag!('exclude-output')
       end
 
       def generate_content(xml)
-        xml.content(:url => "file://$MODULE_DIR$") do
+        xml.content(:url => 'file://$MODULE_DIR$') do
           # Source folders
-          {
-            :main => self.main_source_directories,
-            :test => self.test_source_directories
-          }.each do |kind, directories|
-            directories.map { |dir| dir.to_s }.compact.sort.uniq.each do |dir|
-              xml.sourceFolder :url => file_path(dir), :isTestSource => (kind == :test ? 'true' : 'false')
+          [
+            {:dirs => (self.main_source_directories.dup - self.main_generated_source_directories)},
+            {:dirs => self.main_generated_source_directories, :generated => true},
+            {:type => 'resource', :dirs => (self.main_resource_directories.dup - self.main_generated_resource_directories)},
+            {:type => 'resource', :dirs => self.main_generated_resource_directories, :generated => true},
+            {:test => true, :dirs => (self.test_source_directories - self.test_generated_source_directories)},
+            {:test => true, :dirs => self.test_generated_source_directories, :generated => true},
+            {:test => true, :type => 'resource', :dirs => (self.test_resource_directories - self.test_generated_resource_directories)},
+            {:test => true, :type => 'resource', :dirs => self.test_generated_resource_directories, :generated => true},
+          ].each do |content|
+            content[:dirs].map { |dir| dir.to_s }.compact.sort.uniq.each do |dir|
+              options = {}
+              options[:url] = file_path(dir)
+              options[:isTestSource] = (content[:test] ? 'true' : 'false') if content[:type] != 'resource'
+              options[:type] = 'java-resource' if content[:type] == 'resource' && !content[:test]
+              options[:type] = 'java-test-resource' if content[:type] == 'resource' && content[:test]
+              options[:generated] = 'true' if content[:generated]
+              xml.sourceFolder options
             end
           end
 
@@ -564,16 +633,16 @@ module Buildr #:nodoc:
       end
 
       def relative_dir_inside_dir?(dir)
-        !dir.include?("../")
+        !dir.include?('../')
       end
 
       def generate_initial_order_entries(xml)
-        xml.orderEntry :type => "sourceFolder", :forTests => "false"
-        xml.orderEntry :type => "jdk", :jdkName => jdk_version, :jdkType => "JavaSDK"
+        xml.orderEntry :type => 'sourceFolder', :forTests => 'false'
+        xml.orderEntry :type => 'jdk', :jdkName => jdk_version, :jdkType => 'JavaSDK'
       end
 
       def generate_project_dependency(xml, other_project, export, test = false)
-        attribs = {:type => 'module', "module-name" => other_project}
+        attribs = {:type => 'module', 'module-name' => other_project}
         attribs[:exported] = '' if export
         attribs[:scope] = 'TEST' if test
         xml.orderEntry attribs
@@ -630,81 +699,122 @@ module Buildr #:nodoc:
       end
 
       def version
-        @version || "12"
+        @version || '13'
       end
 
       def jdk_version
-        @jdk_version ||= buildr_project.compile.options.source || "1.6"
+        @jdk_version ||= buildr_project.compile.options.source || '1.7'
       end
 
       def add_artifact(name, type, build_on_make = false)
         add_to_composite_component(self.artifacts) do |xml|
-          xml.artifact(:name => name, :type => type, :"build-on-make" => build_on_make) do |xml|
+          xml.artifact(:name => name, :type => type, 'build-on-make' => build_on_make) do |xml|
             yield xml if block_given?
           end
         end
       end
 
-      def add_configuration(name, type, factory_name, default = false)
+      def add_configuration(name, type, factory_name, default = false, options = {})
         add_to_composite_component(self.configurations) do |xml|
-          xml.configuration(:name => name, :type => type, :factoryName => factory_name, :default => default) do |xml|
+          params = options.dup
+          params[:type] = type
+          params[:factoryName] = factory_name
+          params[:name] = name unless default
+          params[:default] = true if default
+          xml.configuration(params) do |xml|
             yield xml if block_given?
+          end
+        end
+      end
+
+      def add_default_configuration(type, factory_name)
+        add_configuration(nil, type, factory_name, true) do |xml|
+          yield xml if block_given?
+        end
+      end
+
+      def mssql_dialect_mapping
+        sql_dialect_mappings(buildr_project.base_dir => 'TSQL')
+      end
+
+      def postgres_dialect_mapping
+        sql_dialect_mappings(buildr_project.base_dir => 'PostgreSQL')
+      end
+
+      def sql_dialect_mappings(mappings)
+        add_component('SqlDialectMappings') do |component|
+          mappings.each_pair do |path, dialect|
+            file_path = file_path(path).gsub(/\/.$/, '')
+            component.file :url => file_path, :dialect => dialect
           end
         end
       end
 
       def add_postgres_data_source(name, options = {})
         if options[:url].nil? && options[:database]
-         default_url = "jdbc:postgresql://#{(options[:host] || "127.0.0.1")}:#{(options[:port] || "5432")}/#{options[:database]}"
+         default_url = "jdbc:postgresql://#{(options[:host] || '127.0.0.1')}:#{(options[:port] || '5432')}/#{options[:database]}"
         end
 
         params = {
           :driver => 'org.postgresql.Driver',
           :url => default_url,
-          :username => ENV["USER"],
+          :username => ENV['USER'],
           :dialect => 'PostgreSQL',
-          :classpath => ["org.postgresql:postgresql:jar:9.2-1003-jdbc4"]
+          :classpath => ['org.postgresql:postgresql:jar:9.2-1003-jdbc4']
         }.merge(options)
         add_data_source(name, params)
       end
 
       def add_sql_server_data_source(name, options = {})
+        default_url = nil
         if options[:url].nil? && options[:database]
-          default_url = "jdbc:jtds:sqlserver://#{(options[:host] || "127.0.0.1")}:#{(options[:port] || "1433")}/#{options[:database]}"
+          default_url = "jdbc:jtds:sqlserver://#{(options[:host] || '127.0.0.1')}:#{(options[:port] || '1433')}/#{options[:database]}"
         end
 
         params = {
           :driver => 'net.sourceforge.jtds.jdbc.Driver',
           :url => default_url,
-          :username => ENV["USER"],
+          :username => ENV['USER'],
           :dialect => 'TSQL',
           :classpath => ['net.sourceforge.jtds:jtds:jar:1.2.7']
         }.merge(options)
+
+        if params[:url]
+          if /jdbc\:jtds\:sqlserver\:\/\/[^:\\]+(\:\d+)?\/([^;]*)(\;.*)?/ =~ params[:url]
+            database_name = $2
+            params[:schema_pattern] = "#{database_name}.*"
+            params[:default_schemas] = "#{database_name}.*"
+          end
+        end
+
         add_data_source(name, params)
       end
 
       def add_data_source(name, options = {})
         add_to_composite_component(self.data_sources) do |xml|
           data_source_options = {
-            :source => "LOCAL",
+            :source => 'LOCAL',
             :name => name,
             :uuid => Buildr::Util.uuid
           }
           classpath = options[:classpath] || []
-          xml.tag!("data-source", data_source_options) do |xml|
-            xml.tag!("synchronize", (options[:synchronize]||"true"))
-            xml.tag!("jdbc-driver", options[:driver]) if options[:driver]
-            xml.tag!("jdbc-url", options[:url]) if options[:url]
-            xml.tag!("user-name", options[:username]) if options[:username]
-            xml.tag!("user-password", encrypt(options[:password])) if options[:password]
-            xml.tag!("default-dialect", options[:dialect]) if options[:dialect]
+          xml.tag!('data-source', data_source_options) do |xml|
+            xml.tag!('synchronize', (options[:synchronize]||'true'))
+            xml.tag!('jdbc-driver', options[:driver]) if options[:driver]
+            xml.tag!('jdbc-url', options[:url]) if options[:url]
+            xml.tag!('user-name', options[:username]) if options[:username]
+            xml.tag!('user-password', encrypt(options[:password])) if options[:password]
+            xml.tag!('schema-pattern', options[:schema_pattern]) if options[:schema_pattern]
+            xml.tag!('default-schemas', options[:default_schemas]) if options[:default_schemas]
+            xml.tag!('table-pattern', options[:table_pattern]) if options[:table_pattern]
+            xml.tag!('default-dialect', options[:dialect]) if options[:dialect]
 
             xml.libraries do |xml|
               classpath.each do |classpath_element|
                 a = Buildr.artifact(classpath_element)
                 a.invoke
                 xml.library do |xml|
-                  xml.tag!("url", resolve_path(a.to_s))
+                  xml.tag!('url', resolve_path(a.to_s))
                 end
               end
             end if classpath.size > 0
@@ -716,35 +826,35 @@ module Buildr #:nodoc:
         artifact_name = to_artifact_name(project, options)
         artifacts = options[:artifacts] || []
 
-        add_artifact(artifact_name, "exploded-war", build_on_make(options)) do |xml|
+        add_artifact(artifact_name, 'exploded-war', build_on_make(options)) do |xml|
           dependencies = (options[:dependencies] || ([project] + project.compile.dependencies)).flatten
           libraries, projects = partition_dependencies(dependencies)
 
           emit_output_path(xml, artifact_name, options)
-          xml.root :id => "root" do
-            xml.element :id => "directory", :name => "WEB-INF" do
-              xml.element :id => "directory", :name => "classes" do
+          xml.root :id => 'root' do
+            xml.element :id => 'directory', :name => 'WEB-INF' do
+              xml.element :id => 'directory', :name => 'classes' do
                 artifact_content(xml, project, projects, options)
               end
-              xml.element :id => "directory", :name => "lib" do
+              xml.element :id => 'directory', :name => 'lib' do
                 emit_libraries(xml, libraries)
                 emit_jar_artifacts(xml, artifacts)
               end
             end
 
             if options[:enable_war].nil? || options[:enable_war] || (options[:war_module_names] && options[:war_module_names].size > 0)
-              module_names = options[:war_module_names] || [project.iml.id]
+              module_names = options[:war_module_names] || [project.iml.name]
               module_names.each do |module_name|
-                facet_name = options[:war_facet_name] || "Web"
-                xml.element :id => "javaee-facet-resources", :facet => "#{module_name}/web/#{facet_name}"
+                facet_name = options[:war_facet_name] || 'Web'
+                xml.element :id => 'javaee-facet-resources', :facet => "#{module_name}/web/#{facet_name}"
               end
             end
 
             if options[:enable_gwt] || (options[:gwt_module_names] && options[:gwt_module_names].size > 0)
-              module_names = options[:gwt_module_names] || [project.iml.id]
+              module_names = options[:gwt_module_names] || [project.iml.name]
               module_names.each do |module_name|
-                facet_name = options[:gwt_facet_name] || "GWT"
-                xml.element :id => "gwt-compiler-output", :facet => "#{module_name}/gwt/#{facet_name}"
+                facet_name = options[:gwt_facet_name] || 'GWT'
+                xml.element :id => 'gwt-compiler-output', :facet => "#{module_name}/gwt/#{facet_name}"
               end
             end
           end
@@ -754,14 +864,14 @@ module Buildr #:nodoc:
       def add_exploded_ear_artifact(project, options ={})
         artifact_name = to_artifact_name(project, options)
 
-        add_artifact(artifact_name, "exploded-ear", build_on_make(options)) do |xml|
+        add_artifact(artifact_name, 'exploded-ear', build_on_make(options)) do |xml|
           dependencies = (options[:dependencies] || ([project] + project.compile.dependencies)).flatten
           libraries, projects = partition_dependencies(dependencies)
 
           emit_output_path(xml, artifact_name, options)
-          xml.root :id => "root" do
+          xml.root :id => 'root' do
             emit_module_output(xml, projects)
-            xml.element :id => "directory", :name => "lib" do
+            xml.element :id => 'directory', :name => 'lib' do
               emit_libraries(xml, libraries)
             end
           end
@@ -776,9 +886,9 @@ module Buildr #:nodoc:
         raise "Unable to add non-project dependencies (#{libraries.inspect}) to jar artifact" if libraries.size > 0
 
         jar_name = "#{artifact_name}.jar"
-        add_artifact(jar_name, "jar", build_on_make(options)) do |xml|
+        add_artifact(jar_name, 'jar', build_on_make(options)) do |xml|
           emit_output_path(xml, artifact_name, options)
-          xml.root(:id => "archive", :name => jar_name) do
+          xml.root(:id => 'archive', :name => jar_name) do
             artifact_content(xml, project, projects, options)
           end
         end
@@ -787,36 +897,315 @@ module Buildr #:nodoc:
       def add_exploded_ejb_artifact(project, options = {})
         artifact_name = to_artifact_name(project, options)
 
-        add_artifact(artifact_name, "exploded-ejb", build_on_make(options)) do |xml|
+        add_artifact(artifact_name, 'exploded-ejb', build_on_make(options)) do |xml|
           dependencies = (options[:dependencies] || [project]).flatten
           libraries, projects = partition_dependencies(dependencies)
           raise "Unable to add non-project dependencies (#{libraries.inspect}) to ejb artifact" if libraries.size > 0
 
           emit_output_path(xml, artifact_name, options)
-          xml.root :id => "root" do
+          xml.root :id => 'root' do
             artifact_content(xml, project, projects, options)
           end
         end
       end
 
-      def add_gwt_configuration(launch_page, project, options = {})
-        name = options[:name] || "Run #{launch_page}"
-        shell_parameters = options[:shell_parameters] || ""
-        vm_parameters = options[:vm_parameters] || "-Xmx512m"
+      def add_java_configuration(project, classname, options = {})
+        args = options[:args] || ''
+        dir = options[:dir] || 'file://$PROJECT_DIR$/'
+        debug_port = options[:debug_port] || 2599
+        module_name = options[:module_name] || project.iml.name
+        jvm_args = options[:jvm_args] || ''
+        name = options[:name] || classname
 
-        add_configuration(name, "GWT.ConfigurationType", "GWT Configuration") do |xml|
-          xml.module(:name => project.iml.id)
-          xml.option(:name => "RUN_PAGE", :value => launch_page)
-          xml.option(:name => "SHELL_PARAMETERS", :value => shell_parameters)
-          xml.option(:name => "VM_PARAMETERS", :value => vm_parameters)
+        add_to_composite_component(self.configurations) do |xml|
+          xml.configuration(:name => name, :type => 'Application', :factoryName => 'Application', :default => !!options[:default]) do |xml|
+            xml.extension(:name => 'coverage', :enabled => 'false', :merge => 'false', :sample_coverage => 'true', :runner => 'idea')
+            xml.option(:name => 'MAIN_CLASS_NAME', :value => classname)
+            xml.option(:name => 'VM_PARAMETERS', :value => jvm_args)
+            xml.option(:name => 'PROGRAM_PARAMETERS', :value => args)
+            xml.option(:name => 'WORKING_DIRECTORY', :value => dir)
+            xml.option(:name => 'ALTERNATIVE_JRE_PATH_ENABLED', :value => 'false')
+            xml.option(:name => 'ALTERNATIVE_JRE_PATH', :value => '')
+            xml.option(:name => 'ENABLE_SWING_INSPECTOR', :value => 'false')
+            xml.option(:name => 'ENV_VARIABLES')
+            xml.option(:name => 'PASS_PARENT_ENVS', :value => 'true')
+            xml.module(:name => module_name)
+            xml.envs
+            xml.RunnerSettings(:RunnerId => 'Debug') do |xml|
+              xml.option(:name => 'DEBUG_PORT', :value => debug_port.to_s)
+              xml.option(:name => 'TRANSPORT', :value => '0')
+              xml.option(:name => 'LOCAL', :value => 'true')
+            end
+            xml.RunnerSettings(:RunnerId => 'Run')
+            xml.ConfigurationWrapper(:RunnerId => 'Debug')
+            xml.ConfigurationWrapper(:RunnerId => 'Run')
+            xml.method
+          end
+        end
+      end
 
-          xml.RunnerSettings(:RunnerId => "Run")
-          xml.ConfigurationWrapper(:RunnerId => "Run")
+      def add_ruby_script_configuration(project, script, options = {})
+        args = options[:args] || ''
+        path = ::Buildr::Util.relative_path(File.expand_path(script), project.base_dir)
+        name = options[:name] || File.basename(script)
+        dir = options[:dir] || "$MODULE_DIR$/#{path}"
+        sdk = options[:sdk] || 'rbenv: ' + (IO.read(File.dirname(__FILE__) + '/../.ruby-version').trim rescue "jruby-#{RUBY_VERSION}")
+
+        add_to_composite_component(self.configurations) do |xml|
+          xml.configuration(:name => name, :type => 'RubyRunConfigurationType', :factoryName => 'Ruby', :default => !!options[:default]) do |xml|
+
+            xml.module(:name => project.iml.name)
+            xml.RUBY_RUN_CONFIG(:NAME => 'RUBY_ARGS', :VALUE => '-e STDOUT.sync=true;STDERR.sync=true;load($0=ARGV.shift)')
+            xml.RUBY_RUN_CONFIG(:NAME => 'WORK DIR', :VALUE => dir)
+            xml.RUBY_RUN_CONFIG(:NAME => 'SHOULD_USE_SDK', :VALUE => 'true')
+            xml.RUBY_RUN_CONFIG(:NAME => 'ALTERN_SDK_NAME', :VALUE => sdk)
+            xml.RUBY_RUN_CONFIG(:NAME => 'myPassParentEnvs', :VALUE => 'true')
+
+            xml.envs
+            xml.EXTENSION(:ID => 'BundlerRunConfigurationExtension', :bundleExecEnabled => 'false')
+            xml.EXTENSION(:ID => 'JRubyRunConfigurationExtension')
+
+            xml.RUBY_RUN_CONFIG(:NAME => 'SCRIPT_PATH', :VALUE => script)
+            xml.RUBY_RUN_CONFIG(:NAME => 'SCRIPT_ARGS', :VALUE => args)
+            xml.RunnerSettings(:RunnerId => 'RubyDebugRunner')
+            xml.ConfigurationWrapper(:RunnerId => 'RubyDebugRunner')
+          end
+        end
+      end
+
+      def add_gwt_configuration(project, options = {})
+        launch_page = options[:launch_page]
+        name = options[:name] || (launch_page ? "Run #{launch_page}" : "Run #{project.name} DevMode")
+        shell_parameters = options[:shell_parameters]
+        vm_parameters = options[:vm_parameters] || '-Xmx512m'
+        singleton = options[:singleton].nil? ? true : !!options[:singleton]
+        super_dev = options[:super_dev].nil? ? true : !!options[:super_dev]
+        gwt_module = options[:gwt_module]
+
+        start_javascript_debugger = options[:start_javascript_debugger].nil? ? true : !!options[:start_javascript_debugger]
+
+        add_configuration(name, 'GWT.ConfigurationType', 'GWT Configuration', false, :singleton => singleton) do |xml|
+          xml.module(:name => project.iml.name)
+
+          xml.option(:name => 'VM_PARAMETERS', :value => vm_parameters)
+          xml.option(:name => 'RUN_PAGE', :value => launch_page) if launch_page
+          xml.option(:name => 'GWT_MODULE', :value => gwt_module) if gwt_module
+
+          xml.option(:name => 'START_JAVASCRIPT_DEBUGGER', :value => start_javascript_debugger)
+          xml.option(:name => 'USE_SUPER_DEV_MODE', :value => super_dev)
+          xml.option(:name => 'SHELL_PARAMETERS', :value => shell_parameters) if shell_parameters
+
+          xml.RunnerSettings(:RunnerId => 'Debug') do |xml|
+            xml.option(:name => 'DEBUG_PORT', :value => '')
+            xml.option(:name => 'TRANSPORT', :value => 0)
+            xml.option(:name => 'LOCAL', :value => true)
+          end
+
+          xml.RunnerSettings(:RunnerId => 'Run')
+          xml.ConfigurationWrapper(:RunnerId => 'Run')
+          xml.ConfigurationWrapper(:RunnerId => 'Debug')
           xml.method()
         end
       end
 
+      def add_glassfish_configuration(project, options = {})
+        artifact_name = options[:name] || project.iml.id
+        version = options[:version] || '4.1.0'
+        server_name = options[:server_name] || "GlassFish #{version}"
+        configuration_name = options[:configuration_name] || server_name
+        domain_name = options[:domain] || project.iml.id
+        domain_port = options[:port] || '9009'
+        packaged = options[:packaged] || {}
+        exploded = options[:exploded] || {}
+
+        add_to_composite_component(self.configurations) do |xml|
+          xml.configuration(:name => configuration_name, :type => 'GlassfishConfiguration', :factoryName => 'Local', :default => false, :APPLICATION_SERVER_NAME => server_name) do |xml|
+            xml.option(:name => 'OPEN_IN_BROWSER', :value => 'false')
+            xml.option(:name => 'UPDATING_POLICY', :value => 'restart-server')
+
+            xml.deployment do |deployment|
+              packaged.each do |name, deployable|
+                artifact = Buildr.artifact(deployable)
+                artifact.invoke
+                deployment.file(:path => resolve_path(artifact.to_s)) do |file|
+                  file.settings do |settings|
+                    settings.option(:name => 'contextRoot', :value => "/#{name}")
+                    settings.option(:name => 'defaultContextRoot', :value => 'false')
+                  end
+                end
+              end
+              exploded.each do |deployable_name|
+                deployment.artifact(:name => deployable_name) do |artifact|
+                  artifact.settings
+                end
+              end
+            end
+
+            xml.tag! 'server-settings' do |server_settings|
+              server_settings.option(:name => 'VIRTUAL_SERVER')
+              server_settings.option(:name => 'DOMAIN', :value => domain_name.to_s)
+              server_settings.option(:name => 'PRESERVE', :value => 'false')
+              server_settings.option(:name => 'USERNAME', :value => 'admin')
+              server_settings.option(:name => 'PASSWORD', :value => '')
+            end
+
+            xml.predefined_log_file(:id => 'GlassFish', :enabled => 'true')
+
+            xml.extension(:name => 'coverage', :enabled => 'false', :merge => 'false', :sample_coverage => 'true', :runner => 'idea')
+
+            xml.RunnerSettings(:RunnerId => 'Cover')
+
+            add_glassfish_runner_settings(xml, 'Cover')
+            add_glassfish_configuration_wrapper(xml, 'Cover')
+
+            add_glassfish_runner_settings(xml, 'Debug', {
+              :DEBUG_PORT => domain_port.to_s,
+              :TRANSPORT => '0',
+              :LOCAL => 'true',
+            })
+            add_glassfish_configuration_wrapper(xml, 'Debug')
+
+            add_glassfish_runner_settings(xml, 'Run')
+            add_glassfish_configuration_wrapper(xml, 'Run')
+
+            xml.method do |method|
+              method.option(:name => 'BuildArtifacts', :enabled => 'true') do |option|
+                option.artifact(:name => artifact_name)
+              end
+            end
+          end
+        end
+      end
+
+      def add_glassfish_remote_configuration(project, options = {})
+        artifact_name = options[:name] || project.iml.id
+        version = options[:version] || '4.1.0'
+        server_name = options[:server_name] || "GlassFish #{version}"
+        configuration_name = options[:configuration_name] || "Remote #{server_name}"
+        domain_port = options[:port] || '9009'
+        packaged = options[:packaged] || {}
+        exploded = options[:exploded] || {}
+
+        add_to_composite_component(self.configurations) do |xml|
+          xml.configuration(:name => configuration_name, :type => 'GlassfishConfiguration', :factoryName => 'Remote', :default => false, :APPLICATION_SERVER_NAME => server_name) do |xml|
+            xml.option(:name => 'LOCAL', :value => 'false')
+            xml.option(:name => 'UPDATING_POLICY', :value => 'hot-swap-classes')
+
+            xml.deployment do |deployment|
+              packaged.each do |name, deployable|
+                artifact = Buildr.artifact(deployable)
+                artifact.invoke
+                deployment.file(:path => resolve_path(artifact.to_s)) do |file|
+                  file.settings do |settings|
+                    settings.option(:name => 'contextRoot', :value => "/#{name}")
+                    settings.option(:name => 'defaultContextRoot', :value => 'false')
+                  end
+                end
+              end
+              exploded.each do |deployable_name|
+                deployment.artifact(:name => deployable_name) do |artifact|
+                  artifact.settings
+                end
+              end
+            end
+
+            xml.tag! 'server-settings' do |server_settings|
+              server_settings.option(:name => 'VIRTUAL_SERVER')
+              server_settings.data do |data|
+                data.option(:name => 'adminServerHost', :value => '')
+                data.option(:name => 'clusterName', :value => '')
+                data.option(:name => 'stagingRemotePath', :value => '')
+                data.option(:name => 'transportHostId')
+                data.option(:name => 'transportStagingTarget') do |option|
+                  option.TransportTarget do |tt|
+                    tt.option(:name => 'id', :value => 'X')
+                  end
+                end
+              end
+            end
+
+            xml.predefined_log_file(:id => 'GlassFish', :enabled => 'true')
+
+            add_glassfish_runner_settings(xml, 'Debug', {
+                                               :DEBUG_PORT => domain_port.to_s,
+                                               :TRANSPORT => '0',
+                                               :LOCAL => 'false',
+                                             })
+            add_glassfish_configuration_wrapper(xml, 'Debug')
+
+            add_glassfish_runner_settings(xml, 'Run')
+            add_glassfish_configuration_wrapper(xml, 'Run')
+
+            xml.method do |method|
+              method.option(:name => 'BuildArtifacts', :enabled => 'true') do |option|
+                option.artifact(:name => artifact_name)
+              end
+            end
+          end
+        end
+      end
+
+      def add_default_testng_configuration(options = {})
+        jvm_args = options[:jvm_args] || '-ea'
+        dir = options[:dir] || '$PROJECT_DIR$'
+
+        add_default_configuration('TestNG', 'TestNG') do |xml|
+          xml.extension(:name => 'coverage', :enabled => 'false', :merge => 'false', :sample_coverage => 'true', :runner => 'idea')
+          xml.module(:name => '')
+          xml.option(:name => 'ALTERNATIVE_JRE_PATH_ENABLED', :value => 'false')
+          xml.option(:name => 'ALTERNATIVE_JRE_PATH')
+          xml.option(:name => 'SUITE_NAME')
+          xml.option(:name => 'PACKAGE_NAME')
+          xml.option(:name => 'MAIN_CLASS_NAME')
+          xml.option(:name => 'METHOD_NAME')
+          xml.option(:name => 'GROUP_NAME')
+          xml.option(:name => 'TEST_OBJECT', :value => 'CLASS')
+          xml.option(:name => 'VM_PARAMETERS', :value => jvm_args)
+          xml.option(:name => 'PARAMETERS')
+          xml.option(:name => 'WORKING_DIRECTORY', :value => dir)
+          xml.option(:name => 'OUTPUT_DIRECTORY')
+          xml.option(:name => 'ANNOTATION_TYPE')
+          xml.option(:name => 'ENV_VARIABLES')
+          xml.option(:name => 'PASS_PARENT_ENVS', :value => 'true')
+          xml.option(:name => 'TEST_SEARCH_SCOPE') do |opt|
+            opt.value(:defaultName => 'moduleWithDependencies')
+          end
+          xml.option(:name => 'USE_DEFAULT_REPORTERS', :value => 'false')
+          xml.option(:name => 'PROPERTIES_FILE')
+          xml.envs
+          xml.properties
+          xml.listeners
+          xml.method
+        end
+      end
+
       protected
+
+      def add_glassfish_runner_settings(xml, name, options = {})
+        xml.RunnerSettings(:RunnerId => name.to_s) do |runner_settings|
+          options.each do |key, value|
+            runner_settings.option(:name => key.to_s, :value => value.to_s)
+          end
+        end
+      end
+
+      def add_glassfish_configuration_wrapper(xml, name)
+        xml.ConfigurationWrapper(:VM_VAR => 'JAVA_OPTS', :RunnerId => name.to_s) do |configuration_wrapper|
+          configuration_wrapper.option(:name => 'USE_ENV_VARIABLES', :value => 'true')
+          configuration_wrapper.STARTUP do |startup|
+            startup.option(:name => 'USE_DEFAULT', :value => 'true')
+            startup.option(:name => 'SCRIPT', :value => '')
+            startup.option(:name => 'VM_PARAMETERS', :value => '')
+            startup.option(:name => 'PROGRAM_PARAMETERS', :value => '')
+          end
+          configuration_wrapper.SHUTDOWN do |shutdown|
+            shutdown.option(:name => 'USE_DEFAULT', :value => 'true')
+            shutdown.option(:name => 'SCRIPT', :value => '')
+            shutdown.option(:name => 'VM_PARAMETERS', :value => '')
+            shutdown.option(:name => 'PROGRAM_PARAMETERS', :value => '')
+          end
+        end
+      end
 
       def artifact_content(xml, project, projects, options)
         emit_module_output(xml, projects)
@@ -825,12 +1214,12 @@ module Buildr #:nodoc:
       end
 
       def extension
-        "ipr"
+        'ipr'
       end
 
       def base_document
         target = StringIO.new
-        Builder::XmlMarkup.new(:target => target).project(:version => "4")
+        Builder::XmlMarkup.new(:target => target).project(:version => '4')
         Buildr::IntellijIdea.new_document(target.string)
       end
 
@@ -860,25 +1249,25 @@ module Buildr #:nodoc:
 
       def project_root_manager_component
         attribs = {}
-        attribs["version"] = "2"
-        attribs["languageLevel"] = "JDK_#{self.jdk_version.gsub('.', '_')}"
-        attribs["assert-keyword"] = "true"
-        attribs["jdk-15"] = (jdk_version >= "1.5").to_s
-        attribs["project-jdk-name"] = self.jdk_version
-        attribs["project-jdk-type"] = "JavaSDK"
-        create_component("ProjectRootManager", attribs) do |xml|
-          xml.output("url" => file_path(buildr_project._(:target, :idea, :project_out)))
+        attribs['version'] = '2'
+        attribs['languageLevel'] = "JDK_#{self.jdk_version.gsub('.', '_')}"
+        attribs['assert-keyword'] = 'true'
+        attribs['jdk-15'] = (jdk_version >= '1.5').to_s
+        attribs['project-jdk-name'] = self.jdk_version
+        attribs['project-jdk-type'] = 'JavaSDK'
+        create_component('ProjectRootManager', attribs) do |xml|
+          xml.output('url' => file_path(buildr_project._(:target, :idea, :project_out)))
         end
       end
 
       def project_details_component
-        create_component("ProjectDetails") do |xml|
-          xml.option("name" => "projectName", "value" => self.name)
+        create_component('ProjectDetails') do |xml|
+          xml.option('name' => 'projectName', 'value' => self.name)
         end
       end
 
       def modules_component
-        create_component("ProjectModuleManager") do |xml|
+        create_component('ProjectModuleManager') do |xml|
           xml.modules do
             buildr_project.projects.select { |subp| subp.iml? }.each do |subproject|
               module_path = subproject.base_dir.gsub(/^#{buildr_project.base_dir}\//, '')
@@ -915,37 +1304,37 @@ module Buildr #:nodoc:
 
         project_directories.each do |dir|
           if File.directory?("#{dir}/.git")
-            mappings[dir] = "Git"
+            mappings[dir] = 'Git'
           elsif File.directory?("#{dir}/.svn")
-            mappings[dir] = "svn"
+            mappings[dir] = 'svn'
           end
         end
 
-        if mappings.size > 1
-          create_component("VcsDirectoryMappings") do |xml|
-            mappings.each_pair do |dir, vcs_type|
-              resolved_dir = resolve_path(dir)
-              mapped_dir = resolved_dir == '$PROJECT_DIR$/.' ? buildr_project.base_dir : resolved_dir
-              xml.mapping :directory => mapped_dir, :vcs => vcs_type
-            end
+        return nil if 0 == mappings.size
+
+        create_component('VcsDirectoryMappings') do |xml|
+          mappings.each_pair do |dir, vcs_type|
+            resolved_dir = resolve_path(dir)
+            mapped_dir = resolved_dir == '$PROJECT_DIR$/.' ? buildr_project.base_dir : resolved_dir
+            xml.mapping :directory => mapped_dir, :vcs => vcs_type
           end
         end
       end
 
       def data_sources_component
-        create_composite_component("DataSourceManagerImpl", {:format => "xml", :hash => "3208837817"}, self.data_sources)
+        create_composite_component('DataSourceManagerImpl', {:format => 'xml', :hash => '3208837817'}, self.data_sources)
       end
 
       def artifacts_component
-        create_composite_component("ArtifactManager", {}, self.artifacts)
+        create_composite_component('ArtifactManager', {}, self.artifacts)
       end
 
       def configurations_component
-        create_composite_component("ProjectRunConfigurationManager", {}, self.configurations)
+        create_composite_component('ProjectRunConfigurationManager', {}, self.configurations)
       end
 
       def resolve_path(path)
-        resolve_path_from_base(path, "$PROJECT_DIR$")
+        resolve_path_from_base(path, '$PROJECT_DIR$')
       end
 
     private
@@ -960,19 +1349,19 @@ module Buildr #:nodoc:
 
       def emit_jar_artifacts(xml, artifacts)
         artifacts.each do |p|
-          xml.element :id => "artifact", 'artifact-name' => "#{p}.jar"
+          xml.element :id => 'artifact', 'artifact-name' => "#{p}.jar"
         end
       end
 
       def emit_libraries(xml, libraries)
         libraries.each(&:invoke).map(&:to_s).each do |dependency_path|
-          xml.element :id => "file-copy", :path => resolve_path(dependency_path)
+          xml.element :id => 'file-copy', :path => resolve_path(dependency_path)
         end
       end
 
       def emit_module_output(xml, projects)
         projects.each do |p|
-          xml.element :id => "module-output", :name => p.iml.id
+          xml.element :id => 'module-output', :name => p.iml.name
         end
       end
 
@@ -984,26 +1373,26 @@ module Buildr #:nodoc:
 
       def emit_ejb_descriptors(xml, project, options)
         if options[:enable_ejb] || (options[:ejb_module_names] && options[:ejb_module_names].size > 0)
-          module_names = options[:ejb_module_names] || [project.iml.id]
+          module_names = options[:ejb_module_names] || [project.iml.name]
           module_names.each do |module_name|
-            facet_name = options[:ejb_facet_name] || "EJB"
-            xml.element :id => "javaee-facet-resources", :facet => "#{module_name}/ejb/#{facet_name}"
+            facet_name = options[:ejb_facet_name] || 'EJB'
+            xml.element :id => 'javaee-facet-resources', :facet => "#{module_name}/ejb/#{facet_name}"
           end
         end
       end
 
       def emit_jpa_descriptors(xml, project, options)
         if options[:enable_jpa] || (options[:jpa_module_names] && options[:jpa_module_names].size > 0)
-          module_names = options[:jpa_module_names] || [project.iml.id]
+          module_names = options[:jpa_module_names] || [project.iml.name]
           module_names.each do |module_name|
-            facet_name = options[:jpa_facet_name] || "JPA"
-            xml.element :id => "jpa-descriptors", :facet => "#{module_name}/jpa/#{facet_name}"
+            facet_name = options[:jpa_facet_name] || 'JPA'
+            xml.element :id => 'jpa-descriptors', :facet => "#{module_name}/jpa/#{facet_name}"
           end
         end
       end
 
       def encrypt(password)
-        password.bytes.inject("") { |x, y| x + (y ^ 0xdfaa).to_s(16) }
+        password.bytes.inject('') { |x, y| x + (y ^ 0xdfaa).to_s(16) }
       end
 
       def partition_dependencies(dependencies)
@@ -1013,7 +1402,7 @@ module Buildr #:nodoc:
         dependencies.each do |dependency|
           artifacts = Buildr.artifacts(dependency)
           artifacts_as_strings = artifacts.map(&:to_s)
-          all_projects = Buildr::Project.instance_variable_get("@projects").keys
+          all_projects = Buildr::Project.instance_variable_get('@projects').keys
           project = Buildr.projects(all_projects).detect do |project|
             [project.packages, project.compile.target, project.resources.target, project.test.compile.target, project.test.resources.target].flatten.
               detect { |component| artifacts_as_strings.include?(component.to_s) }
@@ -1032,20 +1421,20 @@ module Buildr #:nodoc:
       include Extension
 
       first_time do
-        desc "Generate Intellij IDEA artifacts for all projects"
-        Project.local_task "idea" => "artifacts"
+        desc 'Generate Intellij IDEA artifacts for all projects'
+        Project.local_task 'idea' => 'artifacts'
 
-        desc "Delete the generated Intellij IDEA artifacts"
-        Project.local_task "idea:clean"
+        desc 'Delete the generated Intellij IDEA artifacts'
+        Project.local_task 'idea:clean'
       end
 
       before_define do |project|
-        project.recursive_task("idea")
-        project.recursive_task("idea:clean")
+        project.recursive_task('idea')
+        project.recursive_task('idea:clean')
       end
 
       after_define do |project|
-        idea = project.task("idea")
+        idea = project.task('idea')
 
         files = [
           (project.iml if project.iml?),
@@ -1057,17 +1446,21 @@ module Buildr #:nodoc:
           idea.enhance do |task|
             mkdir_p module_dir
             info "Writing #{ideafile.filename}"
-            t = Tempfile.open("buildr-idea")
+            t = Tempfile.open('buildr-idea')
             temp_filename = t.path
             t.close!
-            File.open(temp_filename, "w") do |f|
+            File.open(temp_filename, 'w') do |f|
               ideafile.write f
             end
             mv temp_filename, ideafile.filename
           end
+          if project.ipr?
+            filename = project._("#{project.ipr.name}.ids")
+            rm_rf filename if File.exists?(filename)
+          end
         end
 
-        project.task("idea:clean") do
+        project.task('idea:clean') do
           files.each do |f|
             info "Removing #{f.filename}" if File.exist?(f.filename)
             rm_rf f.filename
@@ -1079,7 +1472,7 @@ module Buildr #:nodoc:
         if ipr?
           @ipr ||= IdeaProject.new(self)
         else
-          raise "Only the root project has an IPR"
+          raise 'Only the root project has an IPR'
         end
       end
 

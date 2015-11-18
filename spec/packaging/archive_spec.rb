@@ -345,7 +345,7 @@ shared_examples_for 'ArchiveTask' do
     # all included files newer.
     File.utime Time.now - 100, Time.now - 100, @archive
     archive(@archive).include(@files).invoke
-    File.stat(@archive).mtime.should be_close(Time.now, 10)
+    File.stat(@archive).mtime.should be_within(10).of(Time.now)
   end
 
   it 'should update if a file in a subdir is more recent' do
@@ -369,7 +369,7 @@ shared_examples_for 'ArchiveTask' do
     # By touching all files in the past, there's nothing new to update.
     (@files + [@archive]).each { |f| File.utime Time.now - 100, Time.now - 100, f }
     archive(@archive).include(@files).invoke
-    File.stat(@archive).mtime.should be_close(Time.now - 100, 10)
+    File.stat(@archive).mtime.should be_within(10).of(Time.now - 100)
   end
 
   it 'should update if one of the files is recent' do
@@ -443,6 +443,23 @@ describe TarTask do
 
       tar('foo.tgz').include('src/main/bin/*').invoke
       unzip('target' => 'foo.tgz').extract
+      (File.stat('target/hello').mode & 0777).should == 0777
+    end
+
+    it 'should preserve file permissions when merging zip files' do
+      # with JRuby it's important to use absolute paths with File.chmod()
+      # http://jira.codehaus.org/browse/JRUBY-3300
+      hello = File.expand_path('src/main/bin/hello')
+      write hello, 'echo hi'
+      File.chmod(0777,  hello)
+      fail("Failed to set permission on #{hello}") unless (File.stat(hello).mode & 0777) == 0777
+
+      foo = zip('foo.zip')
+      foo.include('src/main/bin/*').invoke
+      bar = tar('bar.tgz')
+      bar.merge(foo)
+      bar.invoke
+      unzip('target' => 'bar.tgz').extract
       (File.stat('target/hello').mode & 0777).should == 0777
     end
   end
@@ -567,6 +584,23 @@ describe "ZipTask" do
       unzip('target' => 'foo.zip').extract
       (File.stat('target/hello').mode & 0777).should == 0777
     end
+
+    it 'should preserve file permissions when merging zip files' do
+      # with JRuby it's important to use absolute paths with File.chmod()
+      # http://jira.codehaus.org/browse/JRUBY-3300
+      hello = File.expand_path('src/main/bin/hello')
+      write hello, 'echo hi'
+      File.chmod(0777,  hello)
+      fail("Failed to set permission on #{hello}") unless (File.stat(hello).mode & 0777) == 0777
+
+      foo = zip('foo.zip')
+      foo.include('src/main/bin/*').invoke
+      bar = zip('bar.zip')
+      bar.merge(foo)
+      bar.invoke
+      unzip('target' => 'bar.zip').extract
+      (File.stat('target/hello').mode & 0777).should == 0777
+    end
   end
 
 end
@@ -609,7 +643,7 @@ describe Unzip do
       File.utime(Time.now - 10, Time.now - 10, @target)
       unzip(@target=>@zip).target.invoke
     end
-    File.stat(@target).mtime.should be_close(Time.now, 2)
+    File.stat(@target).mtime.should be_within(2).of(Time.now)
   end
 
   it 'should expand files' do

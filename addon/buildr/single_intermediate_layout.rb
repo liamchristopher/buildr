@@ -60,6 +60,8 @@ module Buildr #nodoc
           if top_dir == base_dir && project.iml?
             project.iml.excluded_directories << "#{base_dir}/target"
             project.iml.excluded_directories << "#{base_dir}/reports"
+            clean { rm_rf "#{base_dir}/target" }
+            clean { rm_rf "#{base_dir}/reports" }
           end
           project
         end

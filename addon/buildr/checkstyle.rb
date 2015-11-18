@@ -23,38 +23,40 @@ module Buildr
       # The specs for requirements
       def dependencies
         [
-          'com.puppycrawl.tools:checkstyle:jar:5.5',
-          'commons-cli:commons-cli:jar:1.2',
+          'com.puppycrawl.tools:checkstyle:jar:6.7',
+          'org.antlr:antlr4-runtime:jar:4.5',
           'antlr:antlr:jar:2.7.7',
-          'com.google.collections:google-collections:jar:1.0',
+          'com.google.guava:guava:jar:18.0',
+          'org.apache.commons:commons-lang3:jar:3.4',
+          'org.abego.treelayout:org.abego.treelayout.core:jar:1.0.1',
+          'commons-cli:commons-cli:jar:1.3',
           'commons-beanutils:commons-beanutils-core:jar:1.8.3',
           'commons-logging:commons-logging:jar:1.1.1'
         ]
       end
 
       def checkstyle(configuration_file, format, output_file, source_paths, options = {})
-        dependencies = (options[:dependencies] || []) + self.dependencies
+        dependencies = self.dependencies + (options[:dependencies] || [])
         cp = Buildr.artifacts(dependencies).each { |a| a.invoke() if a.respond_to?(:invoke) }.map(&:to_s)
 
         args = []
         if options[:properties_file]
-          args << "-p"
+          args << '-p'
           args << options[:properties_file]
         end
-        args << "-c"
+        args << '-c'
         args << configuration_file
-        args << "-f"
+        args << '-f'
         args << format
-        args << "-o"
+        args << '-o'
         args << output_file
-        source_paths.each do |source_path|
-          args << "-r"
-          args << source_path
-        end
+        args += source_paths
 
         begin
+          touch output_file
           Java::Commands.java 'com.puppycrawl.tools.checkstyle.Main', *(args + [{:classpath => cp, :properties => options[:properties], :java_args => options[:java_args]}])
         rescue => e
+          rm_f output_file
           raise e if options[:fail_on_error]
         end
       end
@@ -83,8 +85,30 @@ module Buildr
 
       attr_writer :configuration_file
 
+      def configuration_file=(configuration_file)
+        raise 'Configuration artifact already specified' if @configuration_artifact
+        @configuration_file = configuration_file
+      end
+
       def configuration_file
-        @configuration_file || "#{self.config_directory}/checks.xml"
+        if @configuration_file
+          return @configuration_file
+        elsif @configuration_artifact.nil?
+          "#{self.config_directory}/checks.xml"
+        else
+          a = Buildr.artifact(@configuration_artifact)
+          a.invoke
+          a.to_s
+        end
+      end
+
+      def configuration_artifact=(configuration_artifact)
+        raise 'Configuration file already specified' if @configuration_file
+        @configuration_artifact = configuration_artifact
+      end
+
+      def configuration_artifact
+        @configuration_artifact
       end
 
       attr_writer :fail_on_error
@@ -114,7 +138,15 @@ module Buildr
       attr_writer :style_file
 
       def style_file
-        @style_file || "#{self.config_directory}/checkstyle-report.xsl"
+        unless @style_file
+          project_xsl = "#{self.config_directory}/checkstyle-report.xsl"
+          if File.exist?(project_xsl)
+            @style_file = project_xsl
+          else
+            @style_file = "#{File.dirname(__FILE__)}/checkstyle-report.xsl"
+          end
+        end
+        @style_file
       end
 
       attr_writer :suppressions_file
@@ -132,6 +164,7 @@ module Buildr
       def properties
         unless @properties
           @properties = {:basedir => self.project.base_dir}
+          @properties['checkstyle.config.dir'] = self.config_directory if File.directory?(self.config_directory)
           @properties['checkstyle.suppressions.file'] = self.suppressions_file if File.exist?(self.suppressions_file)
           @properties['checkstyle.import-control.file'] = self.import_control_file if File.exist?(self.import_control_file)
         end
@@ -143,7 +176,7 @@ module Buildr
       end
 
       def extra_dependencies
-        @extra_dependencies ||= []
+        @extra_dependencies ||= [self.project.compile.dependencies, self.project.test.compile.dependencies].flatten
       end
 
       protected
@@ -165,9 +198,9 @@ module Buildr
 
       after_define do |project|
         if project.checkstyle.enabled?
-          desc "Generate checkstyle xml report."
-          project.task("checkstyle:xml") do
-            puts "Checkstyle: Analyzing source code..."
+          desc 'Generate checkstyle xml report.'
+          project.task('checkstyle:xml') do
+            puts 'Checkstyle: Analyzing source code...'
             mkdir_p File.dirname(project.checkstyle.xml_output_file)
             Buildr::Checkstyle.checkstyle(project.checkstyle.configuration_file,
                                           project.checkstyle.format,
@@ -179,12 +212,12 @@ module Buildr
           end
 
           if project.checkstyle.html_enabled?
-            xml_task = project.task("checkstyle:xml")
-            desc "Generate checkstyle html report."
-            project.task("checkstyle:html" => xml_task) do
-              puts "Checkstyle: Generating report"
+            xml_task = project.task('checkstyle:xml')
+            desc 'Generate checkstyle html report.'
+            project.task('checkstyle:html' => xml_task) do
+              puts 'Checkstyle: Generating report'
               mkdir_p File.dirname(project.checkstyle.html_output_file)
-              Buildr.ant "checkstyle" do |ant|
+              Buildr.ant 'checkstyle' do |ant|
                 ant.xslt :in => project.checkstyle.xml_output_file,
                          :out => project.checkstyle.html_output_file,
                          :style => project.checkstyle.style_file

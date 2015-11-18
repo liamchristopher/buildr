@@ -97,7 +97,7 @@ end
 describe Buildr.method(:download) do
   before do
     @content = 'we has download!'
-    @http = mock('http')
+    @http = double('http')
     @http.stub(:request).and_return(Net::HTTPNotModified.new(nil, nil, nil))
   end
 
@@ -495,13 +495,13 @@ describe Buildr::Filter do
   it 'should touch target directory' do
     mkpath 'target' ; File.utime @early, @early, 'target'
     @filter.from('src').into('target').run
-    File.stat('target').mtime.should be_close(Time.now, 10)
+    File.stat('target').mtime.should be_within(10).of(Time.now)
   end
 
   it 'should not touch target directory unless running' do
     mkpath 'target' ; File.utime @early, @early, 'target'
     @filter.from('src').into('target').exclude('*').run
-    File.mtime('target').should be_close(@early, 10)
+    File.mtime('target').should be_within(10).of(@early)
   end
 
   it 'should run only on new files' do
@@ -601,7 +601,7 @@ describe Buildr::Options, 'proxy.exclude' do
     @uri = URI("http://#{@host}")
     @no_proxy_args = [@host, 80]
     @proxy_args = @no_proxy_args + ['myproxy', 8080, nil, nil]
-    @http = mock('http')
+    @http = double('http')
     @http.stub(:request).and_return(Net::HTTPNotModified.new(nil, nil, nil))
   end
 

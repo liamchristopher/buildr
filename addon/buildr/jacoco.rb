@@ -18,7 +18,7 @@ module Buildr
   # WARNING: Experimental and may change radically.
   module JaCoCo
     class << self
-      VERSION = '0.5.10.201208310627'
+      VERSION = '0.7.2.201409121644'
 
       def version
         @version || Buildr.settings.build['jacoco'] || VERSION
@@ -37,9 +37,7 @@ module Buildr
           "org.jacoco:org.jacoco.report:jar:#{version}",
           "org.jacoco:org.jacoco.core:jar:#{version}",
           "org.jacoco:org.jacoco.ant:jar:#{version}",
-          'asm:asm:jar:3.3.1',
-          'asm:asm-commons:jar:3.3.1',
-          'asm:asm-tree:jar:3.3.1'
+          'org.ow2.asm:asm-debug-all:jar:5.0.1'
         ]
       end
     end
@@ -132,15 +130,7 @@ module Buildr
           project.test.setup do
             agent_jar = Buildr.artifacts(Buildr::JaCoCo.agent_spec).each(&:invoke).map(&:to_s).join('')
             options = []
-            ["destfile",
-             "append",
-             "exclclassloader",
-             "sessionid",
-             "dumponexit",
-             "output",
-             "address",
-             "port",
-             "classdumpdir"].each do |option|
+            %w(destfile append exclclassloader sessionid dumponexit output address port classdumpdir).each do |option|
               value = project.jacoco.send(option.to_sym)
               options << "#{option}=#{value}" unless value.nil?
             end
@@ -152,10 +142,10 @@ module Buildr
           end
           namespace 'jacoco' do
             if project.jacoco.generate_xml?
-              desc "Generate JaCoCo reports."
+              desc 'Generate JaCoCo reports.'
               task 'reports' do
-                Buildr.ant "jacoco" do |ant|
-                  ant.taskdef(:resource => "org/jacoco/ant/antlib.xml") do |ant|
+                Buildr.ant 'jacoco' do |ant|
+                  ant.taskdef(:resource => 'org/jacoco/ant/antlib.xml') do |ant|
                     ant.classpath :path => Buildr.artifacts(Buildr::JaCoCo.ant_spec).each(&:invoke).map(&:to_s).join(File::PATH_SEPARATOR)
                   end
                   ant.report do |ant|
@@ -169,7 +159,7 @@ module Buildr
                           ant.fileset :dir => project.compile.target
                         end
                       end
-                      ant.sourcefiles(:encoding => "UTF-8") do |ant|
+                      ant.sourcefiles(:encoding => 'UTF-8') do |ant|
                         project.compile.sources.each do |path|
                           ant.fileset :dir => path.to_s
                         end
@@ -181,6 +171,40 @@ module Buildr
                   end
                 end
               end
+            end
+          end
+        end
+      end
+      namespace 'jacoco' do
+        desc 'Generate JaCoCo reports.'
+        task 'report' do
+          Buildr.ant 'jacoco' do |ant|
+            ant.taskdef(:resource => 'org/jacoco/ant/antlib.xml') do |ant|
+              ant.classpath :path => Buildr.artifacts(Buildr::JaCoCo.ant_spec).each(&:invoke).map(&:to_s).join(File::PATH_SEPARATOR)
+            end
+            ant.report do |ant|
+              ant.executiondata do |ant|
+                Buildr.projects.each do |project|
+                  ant.fileset :file=>project.jacoco.destfile if File.exist?(project.jacoco.destfile)
+                end
+              end
+
+              ant.structure(:name => 'Jacoco Report') do |ant|
+                ant.classfiles do |ant|
+                  Buildr.projects.map(&:compile).map(&:target).flatten.map(&:to_s).each do |src|
+                    ant.fileset :dir=>src.to_s if File.exist?(src)
+                  end
+                end
+                ant.sourcefiles(:encoding => 'UTF-8') do |ant|
+                  Buildr.projects.map(&:compile).map(&:sources).flatten.map(&:to_s).each do |src|
+                    ant.fileset :dir=>src.to_s if File.exist?(src)
+                  end
+                end
+              end
+
+              ant.html :destdir => 'reports/jacoco'
+              ant.xml :destfile => 'reports/jacoco/jacoco.xml'
+              ant.csv :destfile => 'reports/jacoco/jacoco.csv'
             end
           end
         end

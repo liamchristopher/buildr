@@ -1,4 +1,213 @@
-1.4.15 (Pending)
+1.4.24 (Pending)
+* Added:  Define the 'activate_jruby_facet' addon that activates the jruby facet in
+          generated IDEA project modules.
+* Change: Update the Intellij IDEA plugin to support marking directories as generated.
+* Change: Update the Intellij IDEA plugin to correctly identify project paths as resource
+          directories.
+* Change: Update the default GWT version used in the GWT addon to the latest release 2.7.0.
+* Fixed:  Fix GWT addon to explicitly add gwt-dev artifact to gwt compile path now that
+          the bug that allowed unintended sharing has been fixed.
+* Fixed:  Fix bug in IDEA module generation that resulted in dependencies in IDEA module
+          using shared references to compile dependencies.
+* Change: Update the checkstyle addon to use checkstyle 6.7.
+
+1.4.23 (2015-06-12)
+* Change: BUILDR-706 - Update the checkstyle addon use checkstyle 6.6. Submitted
+          by Dieter Vrancken.
+* Fixed:  Fix Buildr.rspec_present? so that it works under jruby 1.6.7.2
+* Change: BUILDR-705 - Avoid attempting to load rspec classes unless Buildr.rspec_present?
+          returns true. Reported By rbpandey.
+* Fixed:  Remove debug output left in ipr.sql_dialect_mappings.
+
+1.4.22 (2015-02-28)
+* Change: BUILDR-704 - Updated the Sonar addon to support the latest version of SonarQube
+          Runner. Submitted by Ross Mahony.
+* Added:  Add support for ipr.add_glassfish_remote_configuration method that generates
+          a remote glassfish configuration in IntelliJ IDEA project files.
+* Added:  Add support for iml.prefix and ipr.prefix settings that prefix the generated
+          IntelliJ IDEA project and module files.
+* Change: Update the buildr gemspec so that rspec is no longer a required dependency.
+          This enables end-users to use a different version of rspec and buildr in
+          the same project. The rspec version MUST be be compatible with the version
+          used by Buildr if rspec features are used from within Buildr. Buildr also
+          issues a warning if the `check` method is called and rspec has not been loaded.
+          The warning includes directions on how to resolve the issue. Submitted by r6p.
+* Fixed:  A long standing bug existed such that if tests failed to compile, and the
+          option Buildr.options.test is set to :all then the compilation error would
+          not result in a failed build. As many people set the Buildr.options.test to
+          :all in their continuous delivery/integration tools, this has caused some
+          problems. This has been fixed by ensuring all the problems associated with
+          the resolving the prerequisites are not caught when Buildr.options.test is
+          set to :all.
+* Change: Update checkstyle to 6.1.1. Submitted by neher.
+* Fixed:  Avoid empty dependency issue in gwt addon if the attempting to gwt compile
+          a project that has no src/main/java.
+* Fixed:  Support dependencies in the gwt addon that are other local projects rather
+          that artifacts, without forcing a compilation of dependency when parsing
+          buildfile.
+* Added:  Support configuration of sql dialect mapping in IDEA generated project files
+          through methods on the ipr extension ipr.mssql_dialect_mapping,
+          ipr.postgres_dialect_mapping and ipr.sql_dialect_mappings
+* Added:  Support specification of the target project to which the gwt compilation
+          artifacts are added as an asset, by using :target_project option.
+
+1.4.21 (2014-11-28)
+* Change: Upgrade atoulme-Antwrap to 0.7.5 to remove deprecation warnings in
+          modern JRuby. Suggested by Pepijn Van Eeckhoudt.
+* Change: Update the gwt addon to add the validation dependencies required for GWT
+          compiles without requiring that the user specify the dependency.
+* Change: Update ipr.add_gwt_configuration method to support GWT 2.7 configuration
+          parameters and IDEA 14 parameters.
+* Change: Upgrade jacoco to 0.7.2. Submitted by neher.
+* Change: Update checkstyle addon to use Checkstyle 6.0.
+* Added:  Updated the gwt addon to support the upcoming GWT 2.7.x release.
+* Change: Enhance ipr.add_glassfish_configuration to support the ability to
+          define the version of GlassFish in uses. Change the default to 4.1.0
+          as that is the latest supported variant.
+* Fixed:  Change the name of the GlassFish install in ipr.add_glassfish_configuration
+          to use the same convention that IDEA uses by default. i.e. Name the
+          installation "GlassFish 4.1.0" rather than "Glassfish 4.1.0".
+* Change: Change the default version of the jdk in IDEA project files to 1.7.
+* Change: Change the default version of the IDEA project files created to the
+          current release version 13. To revert to the older versions specify
+          ipr.version = '12' in your buildfile.
+* Added:  Enhance the IdeaFile class to easily support mixing in of custom
+          components from either the filesystem or from an artifact.
+* Change: Update rjb to version 1.5.1.
+* Added:  Update checkstyle addon to support downloading checkstyle checks
+          as an artifact.
+* Added:  Update checkstyle addon to supply checkstyle.config.dir property.
+* Added:  Update pmd addon to support downloading rule files as an artifact.
+* Change: Update pmd addon to use pmd version 5.1.3.
+* Fixed:  BUILDR-702 - Retain Unix permission flags when merging
+          zip files into another zip or tar archive. Submitted by Pepijn Van Eeckhoudt.
+
+1.4.20 (2014-08-23)
+* Fixed : BUILDR-688 - Disregard package-info.java files when determining if
+          the Javac compiler should be run or not. Submitted by Pepijn Van
+          Eeckhoudt.
+* Fixed : Work around bug/feature of jruby 1.7.13 that caches Gem::Version
+          objects based on constructor parameters that causes issues with
+          Buildr as we mutate the version objects through monkey patching.
+* Change: Upgrade rjb dependency to 1.4.9.
+* Change: BUILDR-701 - Update to JUnit 4.11. Submitted by Jean-Philippe Caruana.
+* Added:  Support the 'report_level' property on findbugs addon.
+* Change: Update the findbugs addon to use the 3.0.0 version of Findbugs.
+* Change: Update the findbugs addon to use the built-in findbugs stylesheet
+          to generate the html report.
+* Fixed:  Ensure that the 'source_paths' and 'extra_dependencies' properties
+          in the findbugs addon does not contain arrays or nils.
+* Fixed:  Ensure that the 'single_intermediate_layout' addon removes the top
+          level target and reports directories during 'clean' phase.
+* Added:  Enhance idea project generation of ejb facet by looking for ejb
+          descriptors in location compatible with ejb-jars.
+* Fixed:  Ensure that the 'source_paths' property in the pmd addon does not
+          contain arrays or nils.
+
+1.4.19 (2014-07-06)
+* Fixed:  BUILDR-700 - Ensure SNAPSHOT artifacts, constructed using the
+          download(artifact('group:artifact:jar:1-SNAPSHOT') =>
+          'http://example.com/...') construct will correctly download the
+          artifacts from configured URL.
+* Fixed:  BUILDR-700 - Fix bug where buildr was truncating SNAPSHOT files
+          that had not changed since last update check and HTTP was returning
+          "HTTP Not Modified" status.
+* Fixed:  Fix bug introduced in 1.4.18 version of custom_pom addon where
+          poms are created for artifacts that have a classifier.
+
+1.4.18 (2014-06-24)
+* Fixed:  BUILDR-699 - Update the custom_pom addon to avoid failure when
+          used with zip packages.
+* Fixed:  BUILDR-694 - "buildr upload" fails: wrong number of arguments in
+          progress bar read() in Ruby 2.1.0. Submitted By Mark Reibert.
+* Change: Remove support for uploads to RubyForge.org with gem dependencies
+          as the site no longer exists.
+* Change: BUILDR-664 - Update Checkstyle addon so that extra_dependencies is
+          the project dependencies by default. Move the checkstyle dependencies
+          to the start of the classpath to avoid problems running checkstyle.
+          Submitted by Dieter Vrancken.
+* Fixed:  BUILDR-698 - Correct "Lines of code" example in documentation.
+          Submitted By: Trejkaz.
+* Added:  Add ipr.add_glassfish_configuration method for defining a local
+          glassfish configuration within IDEA.
+* Added:  Add ipr.add_ruby_script_configuration method for defining a ruby
+          configuration within IDEA.
+* Added:  Add ipr.add_java_configuration method for defining a java
+          configuration within IDEA.
+* Change: Include additional rules in default pmd rule set: 'finalizers' and
+          'braces'.
+* Change: Upgrade the version of PMD in use to 5.1.1.
+* Change: Supply a default xsl file for generating the jdepend report.
+* Fixed:  Fix the naming of css_lint addon file so it is made available
+          as an addon.
+
+1.4.17 (2014-05-25)
+* Added:  Add the add_default_testng_configuration method to help IDEA
+          project creation. Improves test coverage across 'default'
+          configurations.
+* Fixed:  Fix a bug where 'default' configurations in IDEA projects
+          were being incorrectly created.
+* Fixed:  Fix the vcs detection in IDEA addon for 1.8.6 (!) versions
+          of ruby by reordering blocks.
+* Change: Supply a default xsl file for generating the checkstyle
+          report.
+* Added:  Add csslint tasks css_lint:xml and css_lint:html that
+          support source code analysis of CSS files.
+* Added:  Add scss_lint tasks scss_lint:xml and scss_lint:html that
+          support source code analysis of SCSS files.
+* Added:  Import 'buildr/custom_pom' addon to make it easier to
+          build POMs for projects publishing to Maven Central.
+* Added:  Add flag to allow non portable extensions in wsgen addon.
+* Fixed:  Avoid nil dereference bug in GWT addon when running GWT in
+          a project that has no source directory.
+
+1.4.16 (2014-05-03)
+* Added:  Add the ability to generate a html report when using the
+          jacoco addon. Extracted from the ode project.
+* Fixed:  Remove the projectname.ids file when rebuilding the idea
+          project file avoiding conflict with idea.
+* Fixed:  Avoid passing duplicate -keep parameters to wsimport from
+          wsgen addon.
+* Change: Improved the error handling when generating java from wsdl
+          in the wsgen addon.
+* Change: Upgraded the Checkstyle plugin to use checkstyle 5.7 that
+          improves Java 7 compatibility.
+* Added:  Add support for configuration of the schema-pattern,
+          table-pattern and default-schemas settings in idea's
+          data source definitions.
+* Change: Upgraded the PMD plugin to use pmd 5.0.5 which for Java 7
+          compatibility.
+* Change: Derive the version of GWT in gwt addon from supplied
+          dependencies.
+* Fixed:  Include the compiled classes on path for GWT addon to
+          ensure the GWT compiler can load annotations.
+* Change: Derive the GWT version from build settings if not
+          explicitly specified by GWT addon.
+* Change: Support prefixing the version generated by the
+          gwt_auto_version addon with the environment
+          variable "VERSION_PREFIX".
+* Fixed:  Support overriding the GWT version used by the GWT addon.
+* Fixed:  Fix problem when the :dependencies option was not
+          passed to the GWT addon.
+* Fixed:  Avoid crash in GPG addon if unable to create a pom
+          for an artifact.
+* Fixed:  Correct location of Git mirror in the README. Submitted
+          by Marcos Sainz.
+
+1.4.15 (2013-11-06)
+* Change: Update to TestNG 6.8.7.
+* Change: Updated the 'test_jar' package type to have a
+          classifier of 'tests' and thus match maven
+          conventions. Reported by Chris Bozic.
+* Fixed:  BUILDR-689 - Ensure that war file includes generated
+          assets rather than the "source" assets that may have
+          been filtered.
+* Fixed:  BUILDR-689 - Define assets task before the project is
+          defined to avoid "undefined method `project='" if the
+          project attempts to generate into the same directory.
+* Added:  BUILDR-679 - Support uploading to a snapshot repository
+          defined by repositories.snapshot_to if the artifact is
+          a snapshot. Submitted by Tammo van Lessen.
 * Change: Update the jaxb_xjc addon to add output directory to
           generated IDEA project files.
 * Change: Update the default output directory used in the jaxb_xjc

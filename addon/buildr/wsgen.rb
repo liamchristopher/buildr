@@ -43,7 +43,7 @@ module Buildr
         project.task("java2wsdl").enhance([project.compile.target])
 
         base_wsdl_dir = File.expand_path(options[:output_dir] || project._(:target, :generated, :wsgen, :main, :wsdl))
-        project.iml.main_source_directories << base_wsdl_dir if project.iml?
+        project.iml.main_generated_source_directories << base_wsdl_dir if project.iml?
         project.file(base_wsdl_dir)
         project.task("java2wsdl").enhance([base_wsdl_dir])
 
@@ -80,7 +80,6 @@ module Buildr
             args << intermediate_dir
             args << "-r"
             args << "#{base_wsdl_dir}/META-INF/wsdl"
-            args << "-keep"
             args << "-s"
             args << java_dir
             args << "-cp"
@@ -115,6 +114,7 @@ module Buildr
       # Service options include:
       # * :service_name -- The name of the service.
       # * :package -- The package in which to generate the code.
+      # * :extension -- Should we allow non-portable extensions.
       #
       # Method options include:
       # * :output_dir -- The target directory.
@@ -154,23 +154,35 @@ module Buildr
             command << ws_dir
             command << "-p"
             command << pkg
+            if config[:extension]
+              command << "-extension"
+            end
             if wsdl_location
               command << "-wsdllocation"
               command << wsdl_location
             end
             command << wsdl_file
 
-            `#{command.join(' ')}`
-            if $? != 0 || !File.exist?(java_file)
+            trace command.join(' ')
+            output = `#{command.join(' ')}`
+            if $? != 0
               rm_rf java_file
+              puts output
               raise "Problem building webservices"
+            end
+            unless File.exist?(java_file)
+              puts output
+              raise "Problem building webservices"
+            end
+            if output =~ /\[WARNING\]/
+              puts output
             end
           end
           project.file(ws_dir).enhance([java_file])
         end
 
         project.compile.from ws_dir
-        project.iml.main_source_directories << ws_dir if project.iml?
+        project.iml.main_generated_source_directories << ws_dir if project.iml?
         project.compile.enhance(['wsdl2java'])
 
         ws_dir

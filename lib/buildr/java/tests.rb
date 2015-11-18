@@ -96,7 +96,7 @@ module Buildr #:nodoc:
         Buildr.settings.build['jmock'] || VERSION
       end
 
-      def dependencies
+      def dependencies(versions = {:hamcrest => "1.1"})
         two_or_later = version[0,1].to_i >= 2
         group = two_or_later ? "org.jmock" : "jmock"
 
@@ -179,7 +179,7 @@ module Buildr #:nodoc:
     end
 
     # JUnit version number.
-    VERSION = '4.8.2'
+    VERSION = '4.11'
 
     class << self
       # :call-seq:
@@ -198,7 +198,8 @@ module Buildr #:nodoc:
       end
 
       def dependencies
-        @dependencies ||= ["junit:junit:jar:#{version}"]+ JMock.dependencies
+        four11_or_newer = version >= "4.11"
+        @dependencies ||= ["junit:junit:jar:#{version}"]+ (four11_or_newer ? JMock.dependencies({:hamcrest => '1.3'}) : JMock.dependencies)
       end
 
       def ant_taskdef #:nodoc:
@@ -244,7 +245,7 @@ module Buildr #:nodoc:
         taskdef.invoke
         ant.taskdef :name=>'junit', :classname=>'org.apache.tools.ant.taskdefs.optional.junit.JUnitTask', :classpath=>taskdef.to_s
 
-        ant.junit forking.merge(:clonevm=>options[:clonevm] || false, :dir=>task.send(:project).path_to) do
+        ant.junit forking.merge(:clonevm=> !!options[:clonevm], :dir=>task.send(:project).path_to) do
           ant.classpath :path=>dependencies.join(File::PATH_SEPARATOR)
           (options[:properties] || []).each { |key, value| ant.sysproperty :key=>key, :value=>value }
           (options[:environment] || []).each { |key, value| ant.env :key=>key, :value=>value }
@@ -296,7 +297,7 @@ module Buildr #:nodoc:
   # * :args -- Arguments passed to the TestNG command line runner.
   class TestNG < TestFramework::Java
 
-    VERSION = '6.8.5'
+    VERSION = '6.8.7'
 
     class << self
       def version
@@ -428,4 +429,3 @@ end # Buildr
 Buildr::TestFramework << Buildr::JUnit
 Buildr::TestFramework << Buildr::TestNG
 Buildr::TestFramework << Buildr::MultiTest
-

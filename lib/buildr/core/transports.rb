@@ -145,10 +145,12 @@ module URI
         modified = File.stat(target).mtime if File.exist?(target)
         temp = Tempfile.new(File.basename(target))
         temp.binmode
-        read({:progress=>verbose}.merge(options || {}).merge(:modified=>modified)) { |chunk| temp.write chunk }
+        written = false
+        read({:progress=>verbose}.merge(options || {}).merge(:modified=>modified)) { |chunk| written = true; temp.write chunk }
         temp.close
         mkpath File.dirname(target)
-        mv temp.path, target
+        # Only attempt to override file if it was actually written to, i.e. "HTTP Not Modified" was not returned.
+        mv temp.path, target if written
       when File
         read({:progress=>verbose}.merge(options || {}).merge(:modified=>target.mtime)) { |chunk| target.write chunk }
         target.flush
@@ -336,8 +338,8 @@ module URI
           request.content_length = content.size
           content.rewind
           stream = Object.new
-          class << stream ; self ;end.send :define_method, :read do |count|
-            bytes = content.read(count)
+          class << stream ; self ;end.send :define_method, :read do |*args|
+            bytes = content.read(*args)
             progress << bytes if bytes
             bytes
           end

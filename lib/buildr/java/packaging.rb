@@ -684,13 +684,10 @@ module Buildr #:nodoc:
           # Add libraries in WEB-INF lib, and classes in WEB-INF classes
           war.with :classes=>[compile.target, resources.target].compact
           war.with :libs=>compile.dependencies
-          # Add included files, or the webapp directory.
-          assets.paths.each do |asset|
-            war.tap do |war|
-              war.enhance([asset])
-            end
-            war.include asset, :as => '.'
-          end
+          webapp = path_to(:source, :main, :webapp)
+          war.with webapp if File.exist?(webapp)
+          war.enhance([assets])
+          war.include assets.to_s, :as => '.' unless assets.paths.empty?
         end
       end
 

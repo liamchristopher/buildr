@@ -104,12 +104,46 @@ module Buildr #:nodoc:
       # Download to a file created by the task.
       fail unless args.keys.size == 1
       uri = URI.parse(args.values.first.to_s)
-      file(args.keys.first.to_s).tap do |task|
-        task.sources << uri
-        task.enhance { uri.download task.name }
+      key = args.keys.first
+      if key.is_a?(Buildr::Artifact)
+        if RUBY_VERSION < '1.9.0'
+          class << key
+            def singleton_class
+              class << self
+                self
+              end
+            end
+
+            def define_singleton_method(name, &block)
+              self.singleton_class.send(:define_method, name, &block)
+            end
+          end
+        end
+
+        key.define_singleton_method(:source) do
+          uri
+        end
+        key.define_singleton_method(:download) do
+          trace "Downloading #{to_spec}"
+          begin
+            download_artifact(uri)
+            true
+          rescue URI::NotFoundError
+            false
+          rescue Exception => error
+            info error
+            trace error.backtrace.join("\n")
+            false
+          end || fail_download([])
+        end
+        key
+      else
+        file(key.to_s).tap do |task|
+          task.sources << uri
+          task.enhance { uri.download task.name }
+        end
       end
     end
-
   end
 
   # A file task that concatenates all its prerequisites to create a new file.
